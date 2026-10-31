@@ -16,6 +16,12 @@
 *.html text eol=lf
 *.md text eol=lf
 *.json text eol=lf
+*.cs text eol=lf
+*.spec text eol=lf
+
+# 这两个虽然也算 .txt，但要给工具链读，必须 LF
+requirements.txt text eol=lf
+LICENSE text eol=lf
 
 # 二进制，不做任何转换
 *.png binary

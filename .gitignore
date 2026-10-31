@@ -52,3 +52,6 @@ analysis/fix_iine_exit.py
 analysis/test_iine_exit.py
 # batch 脚本（构建 / 修复 / 启动）
 *.cmd
+# 从官方渠道下载的固件包（体积大，不入库）
+downloads/
+.tmpjdy/

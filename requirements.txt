@@ -1,0 +1,12 @@
+# BLE 扫描与设备发现
+bleak>=0.22
+
+# Windows Runtime 投影（PyWinRT）。包名不是 "pywinrt"，而是 winrt-runtime + 分模块
+winrt-runtime
+winrt-Windows.Foundation
+winrt-Windows.Foundation.Collections
+winrt-Windows.Storage.Streams
+winrt-Windows.Devices.Enumeration
+winrt-Windows.Devices.Bluetooth
+winrt-Windows.Devices.Bluetooth.Advertisement
+winrt-Windows.Devices.Bluetooth.GenericAttributeProfile

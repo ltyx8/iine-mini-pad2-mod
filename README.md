@@ -1,157 +1,96 @@
 # 良值复古迷你手柄 2 · Windows 改键工具
 
-在 PC 上直接改手柄键位：本地起一个 BLE 桥，浏览器里点按键就能改，不用装手机 App。
+在 PC 上改手柄键位：本地起一个桥，浏览器里点按键就能改，不用装手机 App。
 
-- 手柄：良值（IINE）复古迷你手柄 2 · `VID 1000 / PID 2001` · 固件平台 `joymi`
+- 手柄：良值（IINE）复古迷你手柄 2 · `VID 1000 / PID 2001` · `joymi` 平台
 - 通道：BLE 服务 `0xAE40`（写 `0xAE41`，通知 `0xAE42`），msgpack 报文
-- 形态：单个 Python 进程 = HTTP 静态站 + BLE GATT 桥，打包后是一个 exe
 
-## 快速开始
+## 运行
 
-三种方式，按需选一种。
-
-### 方式一：免安装 exe（最省事）
-
-**exe 不在版本库里** —— 10.6 MB 单体二进制，每次构建内容都不同，放进 git 只会把仓库撑大，
-所以 `analysis/dist/` 整目录被 `.gitignore` 排除。clone 下来这个目录是空的，需要按方式二自己打一个。
-本地开发机上现成的在：
-
-```
-analysis/dist/IINE-Keymap.exe
-```
-
-双击运行 → 浏览器自动打开 `http://127.0.0.1:8848/keymap.html` → 点「连接手柄」。
-
-### 方式二：自己构建 exe（PyInstaller）
-
-```powershell
-cd analysis
-pip install pyinstaller bleak pywinrt
-
-pyinstaller --noconfirm --clean --onefile --console --name IINE-Keymap `
-  --add-data "web;web" --collect-submodules winrt --collect-submodules bleak `
-  --hidden-import winrt.windows.devices.bluetooth `
-  --hidden-import winrt.windows.devices.bluetooth.genericattributeprofile `
-  --hidden-import winrt.windows.storage.streams `
-  --hidden-import winrt.windows.foundation `
-  bridge.py
-```
-
-产物：`analysis/dist/IINE-Keymap.exe`，约 10.6 MB，内含 Python 运行时，目标机器不需要装 Python。
-
-三个必查项：
-
-- **打包前先退出正在运行的 exe**，否则 PyInstaller 删不掉 `dist` 里的旧文件（报 `OSError: [safe-delete]`）
-- `--add-data "web;web"` 把网页一起打进包，漏了打开就是 404
-- `winrt` / `bleak` 必须 `--collect-submodules`，否则运行时报找不到 Windows Runtime 组件
-
-打包配置另存了一份 `analysis/IINE-Keymap.spec`，也可以直接 `pyinstaller IINE-Keymap.spec`。
-
-### 方式三：源码直接跑
+需要 Windows 10 及以上、Python 3.10+。
 
 ```bash
-pip install bleak pywinrt
+pip install -r requirements.txt
 python analysis/bridge.py --port 8848 --open
 ```
 
-参数：`--addr <MAC>` 指定地址、`--no-auto` 启动时不自动连、`--chunk N` 改分片大小、`--no-open` 不自动开浏览器。
+浏览器会自动打开 `http://127.0.0.1:8848/keymap.html`，点「连接手柄」。
 
-## 手柄档位（这条最影响成败）
+参数：`--addr <MAC>` 指定地址 · `--no-auto` 启动时不自动连 · `--chunk N` 改分片大小 · `--no-open` 不自动开浏览器
 
-手柄拨到不同档位，连 Windows 的方式完全不同，实测结论如下：
+## 手柄档位（最影响成败）
+
+手柄拨到不同档位，连 Windows 的方式完全不同：
 
 | 档位 | Windows 侧连接方式 | 实测结果 |
 |---|---|---|
-| **鼠标档** | BLE HID（`BTHLE`，链路现成） | **最推荐**，1.5 秒连上，改键正常 |
-| **键盘档** | 经典蓝牙 HID | 首连约 8 秒，断线重连约 1 秒 |
+| **鼠标档** | BLE HID（`BTHLE`，链路现成） | **最推荐**，1.5 秒连上 |
+| **键盘档** | 经典蓝牙 HID | 首连约 8 秒，重连约 1 秒 |
 | 私有 / 配置档 | 不连（无驱动） | 专为配置设计，稳定 |
-| Xbox 档 | 经典蓝牙 HID | 重启后要等链路稳定，可能需 2~3 分钟 |
-| Switch 档 | 经典蓝牙（`Pro Controller`） | 最难：只能抢经典连接断开的瞬间 |
+| Xbox 档 | 经典蓝牙 HID | 重启后要等链路稳定，可能 2~3 分钟 |
+| Switch 档 | 经典蓝牙（`Pro Controller`） | 最难，只能抢经典连接断开的瞬间 |
 
-**改键时用鼠标档或私有档**，改完拨回去打游戏，配置写进固件不会丢。
+改键用鼠标档或私有档，改完拨回去打游戏，配置存在固件里不会丢。
 
-> 手柄每次切档，BLE 地址都会变（随机地址），程序靠「上次成功的地址 → 已配对列表 → 扫描」逐级找回。
+手柄每切一次档，BLE 地址都会变（随机地址），程序按「缓存地址 → 已配对列表 → 扫描」逐级找回。
 
 ## 界面
 
-五个栏目，点手柄图上的标签即可改：
-
-- **手柄** —— 键映射。有「改键方式」开关：`单向赋值`（只改这一个键）/ `交换两键`（两个键互相调换）
-- **键盘** —— 最多 **2 个普通键 + 2 个修饰键**，所以能做 `Ctrl+C` 这类组合
-- **鼠标** —— 左/右键、滚轮、移动方向与步长（1–48）
-- **媒体键** —— 音量、播放暂停、上下曲、亮度、静音等（见下方「已知限制」）
+- **手柄** —— 键映射。有「改键方式」开关：`单向赋值`（只改这一个键）/ `交换两键`（互相调换）
+- **键盘** —— 最多 2 个普通键 + 2 个修饰键，所以能做 `Ctrl+C` 这类组合
+- **鼠标** —— 左右键、滚轮、移动方向与步长（1–48）
+- **媒体键** —— 音量、播放暂停、上下曲、亮度、静音（见「已知限制」）
 - **其他** —— 无操作自动关机时间
 
-改完点「应用」写入固件，程序会自动回读校验。
+改完点「应用」写入固件，程序自动回读校验。
 
 ## 目录结构
 
 ```
 analysis/
-├── bridge.py                 本地桥：HTTP 服务 + BLE GATT 双向通道（核心）
-├── winrt_link.py             WinRT 链路与 V1 帧构建
-├── web/
-│   ├── keymap.html           可视化改键页面（主界面）
-│   ├── assets/               手柄底图、按键图标
-│   └── data/                 键位坐标表、机型表
-├── kb_probe.py               键盘表读写（set_kb）
-├── mouse_probe.py            鼠标表读写（set_mouse）
-├── cs_probe.py               媒体键表读写（set_cs）
-├── gp_probe.py               手柄键映射表读写（set_gp）
-├── *_backup.json             各表出厂基线备份
-├── V1协议实测与改键说明.md    协议细节、报文逐字节记录
-└── dist/                     构建产物（不入库，构建方法见「方式二」）
-    └── IINE-Keymap.exe       约 10.6 MB，含 Python 运行时
+├── bridge.py            本地桥：HTTP 服务 + BLE GATT 双向通道（核心）
+├── winrt_link.py        WinRT 链路与 V1 帧构建
+├── web/keymap.html      可视化改键页面（主界面）
+├── web/assets/          手柄底图与按键图标
+├── web/data/            键位坐标表、机型表
+├── kb_probe.py          键盘表读写（set_kb）
+├── mouse_probe.py       鼠标表读写（set_mouse）
+├── cs_probe.py          媒体键表读写（set_cs）
+├── gp_probe.py          手柄映射表读写（set_gp）
+├── *_backup.json        各表出厂基线备份
+└── V1协议实测与改键说明.md
 ```
 
 ## 协议要点
 
-**帧格式**（BLE 上收发）
-
-```
-B4 | LEN | SEQ | CC | payload
-```
-
-- `LEN` = 整帧长度，严格等于实际字节数
-- `SEQ` 高位 `0x80` 表示一条消息的首帧，低位 `0x7F` 为 `1` 表示末帧
-- 分片净载荷 = `MTU - 7`（本机协商到 MTU 64，即每片 57 字节）
-
-**五张表**
+帧格式：`B4 | LEN | SEQ | CC | payload`。`LEN` 为整帧长度；`SEQ` 高位 `0x80` 表示消息首帧、低位 `0x7F` 为 1 表示末帧；分片净载荷 = `MTU - 7`（协商到 64，即每片 57 字节）。
 
 | 表 | 命令 | 结构 |
 |---|---|---|
 | 键盘 | `get_kb` / `set_kb` | `{key: u8, fn: u8, kb: [键1, 键2, 槽位号]}` |
-| 手柄 | `get_gp` / `set_gp` | `{key: u8, gp: u8}`，`gp` 是目标槽位号 |
+| 手柄 | `get_gp` / `set_gp` | `{key: u8, gp: u8}`，`gp` 是目标槽位 |
 | 鼠标 | `get_mouse` / `set_mouse` | `{key: u8, but: u8, w: i16, x: i16, y: i16}` |
-| 媒体键 | `get_cs` / `set_cs` | `{key: u16, cs: u16}`，`cs` 是 Consumer Page usage |
-| 关机时间 | `get_sleep` / `set_sleep` | `{discon: u8, con: u8}`，单位分钟，0 = 不关 |
+| 媒体键 | `get_cs` / `set_cs` | `{key: u16, cs: u16}`，Consumer Page usage |
+| 关机 | `get_sleep` / `set_sleep` | `{discon: u8, con: u8}`，分钟，0 = 不关 |
 
-写表一律**全量**：条目数必须与读到的条数一致，只发一条固件会直接忽略。
-`set_*` 没有 ACK，判断是否写入成功只能靠回读。
+写表一律**全量**：条目数要与读到的条数一致，只发一条固件会忽略。`set_*` 没有 ACK，是否写入成功只能靠回读判断。
 
-**槽位号**
-
-```
-0=A 1=B 3=X 4=Y 6=L 7=R 8=ZL 9=ZR 10=− 11=+ 12=截图 15=HOME
-16=↑ 17=↓ 18=← 19=→ 23=M1
-```
+槽位号：`0=A 1=B 3=X 4=Y 6=L 7=R 8=ZL 9=ZR 10=− 11=+ 12=截图 15=HOME 16=↑ 17=↓ 18=← 19=→ 23=M1`
 
 ## 踩过的坑
 
-1. **COM 回调线程不能直接塞 asyncio 队列**。`value_changed` 跑在 WinRT 线程，`put_nowait` 不会唤醒事件循环，数据躺在队列里、等的一方睡到超时。必须 `loop.call_soon_threadsafe()`。这一处曾让「读表」从 1.6 秒变成 19 秒以上。
-2. **MTU 实测是 64，不是 23**。App 连上就 `requestMtu(517)`，WinRT 没有这个 API，只能读 `GattSession.max_pdu_size`。照抄 23 会白发 3.5 倍帧。
-3. **`0xAE41` 是 WriteWithoutResponse**。用带响应的写法会等一个永远不来的 ACK，每条命令都卡满超时。
-4. **识别设备看厂商广播数据，不看名字**。APK 里 `scanIdentifier = "ig05"`，匹配 AD `0xFF` 里的字符串；手柄连上后广播名可能变成 `None`。
-5. **每次切档 BLE 地址都会变**，缓存要能失效重找。
-6. **经典链路占用时 BLE 侧只广播、不接受连接**，服务表返回 0 个，报 `Unreachable`。
-7. **同一个 MAC 会返回同一个 `BluetoothLEDevice` 实例**，只 `close()` 不清引用会导致「断开后再也连不上」。
+1. **COM 回调线程不能直接塞 asyncio 队列**。`value_changed` 跑在 WinRT 线程，`put_nowait` 不唤醒事件循环，数据躺着、等的一方睡到超时。必须 `loop.call_soon_threadsafe()`。这一处曾让读表从 1.6 秒变成 19 秒。
+2. **MTU 实测 64，不是 23**。App 连上就 `requestMtu(517)`，WinRT 没这个 API，只能读 `GattSession.max_pdu_size`。照抄 23 会白发 3.5 倍帧。
+3. **`0xAE41` 是 WriteWithoutResponse**，用带响应的写法会等一个永远不来的 ACK。
+4. **识别设备靠厂商广播数据里的 `ig05`，不看名字**。手柄连上后广播名可能变成 `None`。
+5. **同一个 MAC 返回同一个 `BluetoothLEDevice` 实例**，只 `close()` 不清引用会导致「断开后再也连不上」。
 
 ## 已知限制
 
-- **媒体键在 Windows 上不生效**。`cs` 表能读能写、出厂就配好了（↑=音量+、↓=音量−、←=上一首、→=下一首），但键盘档、鼠标档、私有档实测按下去都没有任何反应 —— 这版固件不会向 PC 发 Consumer 报告。
-- **键盘表只能放标准键盘 usage**（`0x04~0xE7`）。往里写媒体键不会报错、也能存下，但发出去系统不认；`0xE9/0xEA`、`0x80/0x81/0x7F` 都试过，无效。
+- **媒体键在 Windows 上不生效**。`cs` 表能读能写、出厂已配好（↑=音量+、↓=音量−、←=上一首、→=下一首），但各档位实测按下去都没有反应——这版固件不会向 PC 发 Consumer 报告。
+- **键盘表只能放标准键盘 usage**（`0x04~0xE7`）。写媒体键不会报错也能存下，但系统不认（`0xE9/0xEA`、`0x80/0x81/0x7F` 都试过）。
 - **鼠标表的 `but` 只有 5 位**（0–31），写键盘 usage 会被截断成某个鼠标按键号。
-- iOS/macOS 未验证；Android 官方 App 功能更全（触控等）。
+- macOS 未验证；Android 官方 App 功能更全（触控等）。
 
 ## 免责
 

@@ -8,22 +8,53 @@
 
 ## 快速开始
 
-**用打包版**（推荐）
+三种方式，按需选一种。
+
+### 方式一：免安装 exe（最省事）
+
+**exe 不在版本库里** —— 10.6 MB 单体二进制，每次构建内容都不同，放进 git 只会把仓库撑大，
+所以 `analysis/dist/` 整目录被 `.gitignore` 排除。clone 下来这个目录是空的，需要按方式二自己打一个。
+本地开发机上现成的在：
 
 ```
-双击 analysis/dist/IINE-Keymap.exe
+analysis/dist/IINE-Keymap.exe
 ```
 
-浏览器会自动打开 `http://127.0.0.1:8848/keymap.html`，点「连接手柄」即可。
+双击运行 → 浏览器自动打开 `http://127.0.0.1:8848/keymap.html` → 点「连接手柄」。
 
-**用源码**
+### 方式二：自己构建 exe（PyInstaller）
+
+```powershell
+cd analysis
+pip install pyinstaller bleak pywinrt
+
+pyinstaller --noconfirm --clean --onefile --console --name IINE-Keymap `
+  --add-data "web;web" --collect-submodules winrt --collect-submodules bleak `
+  --hidden-import winrt.windows.devices.bluetooth `
+  --hidden-import winrt.windows.devices.bluetooth.genericattributeprofile `
+  --hidden-import winrt.windows.storage.streams `
+  --hidden-import winrt.windows.foundation `
+  bridge.py
+```
+
+产物：`analysis/dist/IINE-Keymap.exe`，约 10.6 MB，内含 Python 运行时，目标机器不需要装 Python。
+
+三个必查项：
+
+- **打包前先退出正在运行的 exe**，否则 PyInstaller 删不掉 `dist` 里的旧文件（报 `OSError: [safe-delete]`）
+- `--add-data "web;web"` 把网页一起打进包，漏了打开就是 404
+- `winrt` / `bleak` 必须 `--collect-submodules`，否则运行时报找不到 Windows Runtime 组件
+
+打包配置另存了一份 `analysis/IINE-Keymap.spec`，也可以直接 `pyinstaller IINE-Keymap.spec`。
+
+### 方式三：源码直接跑
 
 ```bash
 pip install bleak pywinrt
 python analysis/bridge.py --port 8848 --open
 ```
 
-参数：`--addr <MAC>` 指定地址、`--no-auto` 启动时不自动连、`--chunk N` 改分片大小。
+参数：`--addr <MAC>` 指定地址、`--no-auto` 启动时不自动连、`--chunk N` 改分片大小、`--no-open` 不自动开浏览器。
 
 ## 手柄档位（这条最影响成败）
 
@@ -69,7 +100,8 @@ analysis/
 ├── gp_probe.py               手柄键映射表读写（set_gp）
 ├── *_backup.json             各表出厂基线备份
 ├── V1协议实测与改键说明.md    协议细节、报文逐字节记录
-└── dist/IINE-Keymap.exe      打包产物
+└── dist/                     构建产物（不入库，构建方法见「方式二」）
+    └── IINE-Keymap.exe       约 10.6 MB，含 Python 运行时
 ```
 
 ## 协议要点

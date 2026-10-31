@@ -1,0 +1,319 @@
+{
+  "list": [
+    {
+      "title": "Switch Pro手柄",
+      "products": [
+        {
+          "name":"手游拉伸手柄",
+          "image":"gamepad_1000_8888_small",
+          "desc":"复古拉伸手柄",
+          "pid": "8888",
+          "vid": "1000",
+          "is_xbox_layout": true,
+          "manual_url": "https://www.iine.top/products/L1284",
+          "style": "",
+          "replace_pids": [],
+          "platform": "gmacro",
+          "is_joycon": false
+        },
+        {
+          "name": "双矅",
+          "image": "gamepad_1013_3002_small",
+          "desc": "旗舰级手柄",
+          "pid": "3002",
+          "vid": "1013",
+          "is_xbox_layout": false,
+          "manual_url": "https://www.iine.top/products/L1302",
+          "style": "",
+          "replace_pids": [],
+          "platform": "zx",
+          "is_joycon": true
+        },
+        {
+          "name": "星曜",
+          "image": "gamepad_100f_2027_small",
+          "desc": "旗舰级手柄",
+          "pid": "2027",
+          "vid": "100f",
+          "is_xbox_layout": false,
+          "manual_url": "https://www.iine.top/products/L1301",
+          "style": "",
+          "replace_pids": [],
+          "platform": "zx",
+          "is_joycon": false
+        },
+        {
+          "name": "幻影",
+          "image": "gamepad_100f_2008_small",
+          "desc": "旗舰级手柄",
+          "pid": "2008",
+          "vid": "100f",
+          "is_xbox_layout": false,
+          "manual_url": "https://www.iine.top/products/L991",
+          "style": "",
+          "replace_pids": [
+            "200f"
+          ],
+          "platform": "zx",
+          "is_joycon": false
+        },
+        {
+          "name": "幻影 Y",
+          "image": "gamepad_100f_2016_small",
+          "desc": "旗舰级手柄",
+          "pid": "2016",
+          "vid": "100f",
+          "is_xbox_layout": false,
+          "manual_url": "https://www.iine.top/products/L1035",
+          "style": "",
+          "replace_pids": [],
+          "platform": "zx",
+          "is_joycon": false
+        },
+        {
+          "name": "极影",
+          "image": "gamepad_1013_2021_small",
+          "desc": "旗舰级手柄",
+          "pid": "2021",
+          "vid": "1013",
+          "is_xbox_layout": true,
+          "manual_url": "https://www.iine.top/products/L1113",
+          "style": "",
+          "replace_pids": [
+            "2020"
+          ],
+          "platform": "zx",
+          "is_joycon": false
+        },
+        {
+          "name": "小猫PC",
+          "image": "gamepad_1002_2022_small",
+          "desc": "旗舰级手柄",
+          "pid": "2022",
+          "vid": "1002",
+          "is_xbox_layout": true,
+          "manual_url": "https://www.iine.top/products/L1050",
+          "style": "",
+          "replace_pids": [],
+          "platform": "zx",
+          "is_joycon": false
+        },
+        {
+          "name": "卡片手柄",
+          "image": "gamepad_1002_2023_small",
+          "desc": "旗舰级手柄",
+          "pid": "2023",
+          "vid": "1002",
+          "is_xbox_layout": true,
+          "manual_url": "https://www.iine.top/products/L1032",
+          "style": "",
+          "replace_pids": [],
+          "platform": "zx",
+          "is_joycon": false
+        },
+        {
+          "name": "卡片手柄 NS版",
+          "image": "gamepad_1002_2027_small",
+          "desc": "旗舰级手柄",
+          "pid": "2027",
+          "vid": "1002",
+          "is_xbox_layout": false,
+          "manual_url": "https://www.iine.top/products/L1291",
+          "style": "",
+          "replace_pids": [],
+          "platform": "zx",
+          "is_joycon": false
+        },
+        {
+          "name": "对称卡片手柄PRO",
+          "image": "gamepad_1000_8952_small",
+          "desc": "旗舰级手柄",
+          "pid": "8952",
+          "vid": "1000",
+          "is_xbox_layout": false,
+          "manual_url": "https://www.iine.top/products/L1305",
+          "style": "",
+          "replace_pids": [],
+          "platform": "joymi-v2",
+          "is_joycon": false
+        },
+        {
+          "name": "口袋手柄mini",
+          "image": "gamepad_1000_2000_small",
+          "desc": "迷你手柄",
+          "pid": "2000",
+          "vid": "1000",
+          "is_xbox_layout": false,
+          "manual_url": "https://www.iine.top/products/L1162",
+          "style": "",
+          "replace_pids": [],
+          "platform": "joymi",
+          "is_joycon": false
+        },
+        {
+          "name": "复古迷你手柄2",
+          "image": "gamepad_1000_2001_small",
+          "desc": "迷你手柄",
+          "pid": "2001",
+          "vid": "1000",
+          "is_xbox_layout": false,
+          "manual_url": "https://www.iine.top/products/L1283",
+          "style": "",
+          "replace_pids": [],
+          "platform": "joymi",
+          "is_joycon": false
+        },
+        {
+          "name": "猎鹰",
+          "image": "gamepad_100f_2007_small",
+          "desc": "Switch手柄",
+          "pid": "2007",
+          "vid": "100f",
+          "is_xbox_layout": false,
+          "manual_url": "https://www.iine.top/products/L975",
+          "style": "",
+          "replace_pids": [],
+          "platform": "zx",
+          "is_joycon": false
+        },
+        {
+          "name": "墨攻二代",
+          "image": "gamepad_1002_2016_small",
+          "desc": "PC手柄",
+          "pid": "2016",
+          "vid": "1002",
+          "is_xbox_layout": true,
+          "manual_url": "https://www.iine.top/products/L1045",
+          "style": "",
+          "replace_pids": [],
+          "platform": "zx",
+          "is_joycon": false
+        },
+        {
+          "name": "天狼",
+          "image": "gamepad_1001_200f_small",
+          "desc": "PC手柄",
+          "pid": "200f",
+          "vid": "1001",
+          "is_xbox_layout": true,
+          "manual_url": "https://www.iine.top/products/L853",
+          "style": "",
+          "replace_pids": [],
+          "platform": "zx",
+          "is_joycon": false
+        },
+        {
+          "name": "小钢炮",
+          "image": "gamepad_100f_2012_small",
+          "desc": "Switch手柄",
+          "pid": "2012",
+          "vid": "100f",
+          "is_xbox_layout": false,
+          "manual_url": "https://www.iine.top/products/L1267",
+          "style": "",
+          "replace_pids": [
+            "6060",
+            "2018"
+          ],
+          "platform": "zx",
+          "is_joycon": false
+        },
+        {
+          "name": "精灵二代",
+          "image": "gamepad_100f_2015_small",
+          "desc": "Switch手柄",
+          "pid": "2015",
+          "vid": "100f",
+          "is_xbox_layout": false,
+          "manual_url": "https://www.iine.top/products/L982",
+          "style": "",
+          "replace_pids": [],
+          "platform": "zx",
+          "is_joycon": false
+        },
+        {
+          "name": "口袋手柄",
+          "image": "gamepad_100f_200b_small",
+          "desc": "Switch手柄",
+          "pid": "200b",
+          "vid": "100f",
+          "is_xbox_layout": false,
+          "manual_url": "https://www.iine.top/products/L1007",
+          "style": "",
+          "replace_pids": [],
+          "platform": "zx",
+          "is_joycon": false
+        },
+        {
+          "name": "二代",
+          "image": "gamepad_1002_2001_small",
+          "desc": "Switch手柄",
+          "pid": "2001",
+          "vid": "1002",
+          "is_xbox_layout": false,
+          "manual_url": "https://www.iine.top/products/L783",
+          "style": "",
+          "replace_pids": [],
+          "platform": "zx",
+          "is_joycon": false
+        },
+        {
+          "name": "极光",
+          "image": "gamepad_1013_2002_small",
+          "desc": "Switch手柄",
+          "pid": "2002",
+          "vid": "1013",
+          "is_xbox_layout": false,
+          "manual_url": "https://www.iine.top/products/L785",
+          "style": "",
+          "replace_pids": [],
+          "platform": "zx",
+          "is_joycon": false
+        },
+        {
+          "name": "墨攻",
+          "image": "gamepad_1002_2011_small",
+          "desc": "Switch手柄",
+          "pid": "2011",
+          "vid": "1002",
+          "is_xbox_layout": false,
+          "manual_url": "https://www.iine.top/products/L1045",
+          "style": "",
+          "replace_pids": [],
+          "platform": "zx",
+          "is_joycon": false
+        },
+        {
+          "name": "Plus II",
+          "image": "gamepad_100f_2013_small",
+          "desc": "Switch手柄",
+          "pid": "2013",
+          "vid": "100f",
+          "is_xbox_layout": false,
+          "manual_url": "https://www.iine.top/products/L617",
+          "style": "",
+          "replace_pids": [],
+          "platform": "zx",
+          "is_joycon": false
+        },
+        {
+          "name": "透明Pro",
+          "image": "gamepad_100f_2019_small",
+          "desc": "Switch手柄",
+          "pid": "2019",
+          "vid": "100f",
+          "is_xbox_layout": false,
+          "manual_url": "https://www.iine.top/products/L513",
+          "style": "",
+          "replace_pids": [],
+          "platform": "zx",
+          "is_joycon": false
+        }
+      ]
+    },
+    {
+      "title": "PC手柄",
+      "products": []
+    }
+  ]
+}

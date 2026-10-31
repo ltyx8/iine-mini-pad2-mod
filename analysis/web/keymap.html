@@ -1,0 +1,1676 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>良值 复古迷你手柄2 · 可视化改键</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b23; --panel2:#1b2129; --line:#252d38;
+    --fg:#e6edf3; --sub:#8b98a8; --accent:#e5344a; --accent2:#4f9cf9;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+       font:14px/1.5 -apple-system,"Segoe UI",Roboto,"Noto Sans SC",sans-serif;}
+  a{color:var(--accent2)}
+  .wrap{max-width:1080px;margin:0 auto;padding:16px 16px 40px}
+
+  /* ---- 顶栏 ---- */
+  .top{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+  .top h1{font-size:16px;margin:0;font-weight:600}
+  .pill{display:inline-flex;align-items:center;gap:7px;background:var(--panel);
+        border:1px solid var(--line);border-radius:999px;padding:5px 12px;font-size:12px;color:var(--sub)}
+  .dot{width:7px;height:7px;border-radius:50%;background:#4a5563}
+  .dot.on{background:#3fb950;box-shadow:0 0 8px #3fb95088}
+  button{font:inherit;color:var(--fg);background:var(--panel2);border:1px solid var(--line);
+         border-radius:8px;padding:6px 14px;cursor:pointer}
+  button:hover:not(:disabled){border-color:#39434f}
+  button:disabled{opacity:.42;cursor:not-allowed}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+  button.primary:hover:not(:disabled){filter:brightness(1.1)}
+
+  /* ---- 连上后读到的设备信息条 ---- */
+  .devbar{display:flex;flex-wrap:wrap;gap:6px 16px;margin-bottom:12px;padding:10px 14px;
+          background:var(--panel);border:1px solid var(--line);border-radius:10px;
+          font-size:12px;color:var(--sub)}
+  .devbar[hidden]{display:none}
+  .devbar span{display:inline-flex;align-items:center;gap:5px}
+  .devbar b{color:var(--fg);font-weight:600}
+  .devbar .ok{color:#3fb950}
+
+  /* ---- 方向键布局快捷键 ---- */
+  .quick{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;
+         padding:10px 14px;background:var(--panel);border:1px solid var(--line);border-radius:10px}
+  .quick[hidden]{display:none}
+  .quick .qlabel{font-size:12px;color:var(--sub)}
+  .quick .qopts{display:flex;gap:6px}
+  .quick .qopts button{padding:5px 12px;font-size:12px}
+  .quick .qopts button.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+  .quick .qtip{font-size:11px;color:#6b7280;margin-left:auto}
+
+  /* ---- 栏目 tab ---- */
+  .tabs{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;
+        background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:6px;margin-bottom:14px}
+  .tabs button{background:none;border:none;padding:8px 4px;border-radius:8px;
+               display:flex;flex-direction:column;align-items:center;gap:5px;color:var(--sub);font-size:12px}
+  .tabs button img{width:26px;height:26px;opacity:.45}
+  .tabs button.active{background:#20161a;color:var(--accent)}
+  .tabs button.active img{opacity:1}
+  .tabs button:hover:not(.active){background:#1c222a}
+
+  /* ---- 手柄舞台 ---- */
+  .stage{position:relative;background:radial-gradient(circle at 50% 45%,#1c2029,#0f1319 70%);
+         border:1px solid var(--line);border-radius:14px;padding:10px 10px;overflow:visible}
+  /* 设计空间 1080x1290：底图放在 (145,415)，尺寸 783x466 —— 全部取自 App 实测截图 */
+  .padbox{position:relative;width:100%;max-width:560px;margin:0 auto;
+          aspect-ratio:1080/1290;overflow:visible}
+  .padbox > img.base{position:absolute;left:13.43%;top:32.17%;width:72.5%;height:auto;
+                     pointer-events:none;user-select:none;
+                     filter:drop-shadow(0 10px 22px #0008)}
+
+  /* 键位热区：本体一个点 + 外围标签 */
+  /* 连线层：容器比例与 viewBox 一致，所以不会拉伸 */
+  .lines{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:2}
+
+  .hk{position:absolute;transform:translate(-50%,-50%);width:34px;height:34px;border-radius:50%;
+      background:none;border:none;padding:0;cursor:pointer;z-index:4}
+  .hk:hover .ring{opacity:1}
+  .ring{position:absolute;inset:0;border-radius:50%;border:2px solid #4f9cf955;opacity:0;
+        transition:.15s;pointer-events:none}
+  .hk.mapped .ring{border-color:#e5344a44;opacity:.55}
+
+  .tag{position:absolute;transform:translate(-50%,-50%);min-width:34px;max-width:82px;
+       padding:4px 7px;border-radius:8px;background:#f4f2ef;color:#20242a;font-size:10.5px;
+       font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+       text-align:center;line-height:1.2;box-shadow:0 3px 8px #0009;
+       border:1px solid #cfcac3;cursor:pointer;user-select:none;transition:.12s;z-index:3}
+  .tag:hover{background:#fff;transform:translate(-50%,-50%) scale(1.08);z-index:5}
+  .tag.mapped{background:var(--accent);color:#fff;border-color:#c22a3e}
+  .tag.mapped:hover{background:#f04459}
+  .tag.sel{outline:2px solid var(--accent2);outline-offset:2px}
+  .tag .sub2{display:block;font-size:9px;font-weight:400;opacity:.72}
+
+  /* 连线 */
+  .line{position:absolute;height:1px;background:#dfe3e8;opacity:.55;transform-origin:0 50%;
+         pointer-events:none;z-index:1}
+
+  /* ---- 底部条 ---- */
+  .foot{display:flex;gap:10px;justify-content:center;margin-top:16px}
+  .foot button{min-width:110px}
+
+  /* ---- 改键面板 ---- */
+  .mask{position:fixed;inset:0;background:#000a;backdrop-filter:blur(2px);display:none;z-index:50}
+  .mask.open{display:block}
+  .sheet{position:fixed;left:50%;bottom:0;transform:translateX(-50%) translateY(100%);
+         width:min(760px,100%);max-height:82vh;background:#fff;color:#1a1d21;
+         border-radius:16px 16px 0 0;z-index:51;display:flex;flex-direction:column;
+         transition:transform .22s ease}
+  .sheet.open{transform:translateX(-50%) translateY(0)}
+  .sheet header{display:flex;align-items:center;justify-content:space-between;
+                padding:14px 18px;border-bottom:1px solid #e9ecef;flex:0 0 auto}
+  .sheet header h3{margin:0;font-size:16px;font-weight:600}
+  .sheet header .x{background:none;border:none;font-size:20px;color:#6b7280;cursor:pointer;padding:0 6px}
+  .sheet .ok{background:var(--accent);border:none;color:#fff;font-weight:600;padding:7px 20px;border-radius:8px}
+  .sheet .body{overflow-y:auto;padding:16px 18px 26px}
+
+  .io{display:flex;align-items:center;justify-content:center;gap:26px;margin:6px 0 20px}
+  .io .item{text-align:center}
+  .io .box{width:56px;height:56px;border:2px solid #d1d5db;border-radius:12px;background:#fff;
+           display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:600;
+           position:relative;margin:0 auto}
+  .io .item.cur .box{border-color:var(--accent);color:var(--accent)}
+  .io .cap{margin-top:6px;font-size:12px;color:#6b7280}
+  .io .item.cur .cap{color:var(--accent)}
+  .io .arrow{color:#f3a3ae;font-size:18px}
+  .io .box .clr{position:absolute;top:-8px;right:-8px;width:20px;height:20px;border-radius:50%;
+                background:#9ca3af;color:#fff;font-size:12px;line-height:20px;text-align:center;cursor:pointer}
+
+  .grp{margin-bottom:18px}
+  .grp h4{margin:0 0 10px;font-size:13px;color:#6b7280;font-weight:500}
+  .opts{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px}
+  .opts button{background:#fff;border:1px solid #e5e7eb;color:#1a1d21;border-radius:8px;
+               padding:9px 6px;font-size:12.5px}
+  .opts button:hover{border-color:#c7ccd3}
+  .opts button.on{border-color:var(--accent);color:var(--accent);font-weight:600;
+                  box-shadow:inset 0 0 0 1px var(--accent)}
+  .note{font-size:12px;color:#6b7280;margin:10px 0 0}
+  /* 手柄栏改键：单个原始键位框 + 示意图点选（照 App 的「更改按键」） */
+  .io.single{gap:0}
+  .io.single .arrow{display:none}
+  .pickhint{text-align:center;font-size:13px;color:#6b7280;margin:14px 0 8px}
+  .sheetpad{position:relative;width:100%;padding-top:119.4%}
+  .sheetpad .spbase{position:absolute;left:12.96%;top:32.17%;width:72.5%}
+  .sheetpad .spick{position:absolute;transform:translate(-50%,-50%);background:#fff;
+    border:1px solid #e5e7eb;color:#1a1d21;border-radius:7px;padding:4px 8px;font-size:12px;
+    font-weight:600;line-height:1;box-shadow:0 1px 3px rgba(0,0,0,.12);cursor:pointer}
+  .sheetpad .spick:hover{border-color:#c7ccd3}
+  .sheetpad .spick.on{background:var(--accent);border-color:var(--accent);color:#fff}
+  /* 「其他」栏：手柄设置卡片 */
+  .settings{padding:4px 0 0}
+  .setcard{background:#161a20;border:1px solid var(--line);border-radius:14px;padding:18px 16px}
+  .setcard h3{margin:0 0 18px;font-size:15px;color:var(--fg);font-weight:600;
+    display:flex;align-items:center;gap:9px}
+  .setcard h3::before{content:"";width:3px;height:15px;border-radius:2px;background:var(--accent)}
+  .setrow{display:flex;align-items:center;gap:12px;color:#c9cfd8;font-size:13px}
+  .setrow input[type=range]{flex:1;accent-color:var(--accent)}
+  .setrow b{color:var(--fg);font-weight:600;min-width:56px;text-align:right}
+  .setcard button{margin-top:16px;background:#232830;border:1px solid var(--line);color:var(--fg);
+    border-radius:10px;padding:9px 16px;font-size:13px;cursor:pointer}
+  .setcard button:hover{border-color:#3a4250}
+  .setcard button.danger{color:#ff6b7d;border-color:#4a2028}
+  .setcard button.danger:hover{background:#2a161b}
+
+  .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#161b23;
+         border:1px solid var(--line);color:var(--fg);padding:9px 18px;border-radius:10px;
+         font-size:13px;opacity:0;pointer-events:none;transition:.2s;z-index:99}
+  .toast.show{opacity:1}
+  .hint{font-size:12px;color:var(--sub);margin:10px 0 0;text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="top">
+    <h1>复古迷你手柄2 · 可视化改键</h1>
+    <span class="pill"><span class="dot" id="dot"></span><span id="status">未连接</span></span>
+    <span class="pill" id="protoPill" style="display:none">协议 <b id="proto" style="margin-left:4px"></b></span>
+    <div style="margin-left:auto;display:flex;gap:8px">
+      <button class="primary" id="btnConnect">连接手柄</button>
+      <button id="btnDisconnect" disabled>断开</button>
+    </div>
+  </div>
+
+  <div class="devbar" id="devbar" hidden>
+    <span>机型 <b id="dMode">—</b></span>
+    <span>固件 <b id="dVer">—</b></span>
+    <span>电量 <b id="dBat">—</b></span>
+    <span>键盘 <b id="dKb">—</b></span>
+    <span>手柄键 <b id="dGp">—</b></span>
+    <span>鼠标 <b id="dMs">—</b></span>
+    <span>媒体键 <b id="dCs">—</b></span>
+  </div>
+
+  <div class="tabs" id="tabs">
+    <button data-col="pad" class="active"><img src="assets/ic_configure_tabbar_joystick.png" alt="">手柄</button>
+    <button data-col="kb"><img src="assets/ic_configure_tabbar_keyboard.png" alt="">键盘</button>
+    <button data-col="mouse"><img src="assets/ic_configure_tabbar_mouse.png" alt="">鼠标</button>
+    <button data-col="media"><img src="assets/ic_configure_tabbar_media.png" alt="">媒体键</button>
+    <button data-col="other"><img src="assets/ic_configure_tabbar_other.png" alt="">其他</button>
+  </div>
+
+  <!-- 方向键一键布局：只影响十字键那 4 个槽位，改完仍需点「应用」写入 -->
+  <div class="quick" id="quick" hidden>
+    <span class="qlabel">方向键</span>
+    <div class="qopts" id="qopts">
+      <button data-dpad="h">横着拿</button>
+      <button data-dpad="vu">竖着拿 · 键在上</button>
+      <button data-dpad="vd">竖着拿 · 键在下</button>
+    </div>
+    <span class="qtip" id="qtip">点一下把十字四个方向一次性排好，再按「应用」写入</span>
+  </div>
+
+  <!-- 手柄栏：改键方式（单向赋值 / 交换）。固件只会照表执行，不会自己解开旧的
+       映射关系，所以「交换」必须由网页这边把两条一起改掉。 -->
+  <div class="quick" id="gpmodebar" hidden>
+    <span class="qlabel">改键方式</span>
+    <div class="qopts" id="gpmode">
+      <button data-gpmode="assign">单向赋值</button>
+      <button data-gpmode="swap">交换两键</button>
+    </div>
+    <span class="qtip" id="gptip">单向：只改这个键，目标键保持原样</span>
+  </div>
+
+  <div class="stage" id="stage">
+    <div class="padbox" id="padbox">
+      <img class="base" src="assets/gamepad_1000_2001_front.png" alt="手柄">
+    </div>
+  </div>
+
+  <div class="settings" id="settings" hidden>
+    <div class="setcard">
+      <h3>手柄设置</h3>
+      <div class="setrow">
+        <span>无操作关机时间</span>
+        <input type="range" id="sleepRange" min="0" max="240" step="1" value="5">
+        <b id="sleepVal">5 分钟</b>
+      </div>
+      <div class="setrow" style="margin-top:10px;color:#8b98a8;font-size:12px">
+        手柄空闲这么久没有任何输入就自动断电，最左（0）＝永不关机。断连后同样计时。
+      </div>
+      <button id="btnRestore" class="danger">初始化手柄</button>
+      <p class="note" style="margin-top:10px">恢复出厂会把键盘 / 鼠标 / 媒体键 / 手柄键四张表全部重置。</p>
+    </div>
+  </div>
+
+  <div class="foot">
+    <button id="btnReset">重置</button>
+    <button class="primary" id="btnApply" disabled>应用</button>
+  </div>
+  <p class="hint" id="hint">点手柄上的按键标签即可改键。改动后按「应用」写入手柄。</p>
+
+</div>
+
+<!-- 改键面板 -->
+<div class="mask" id="mask"></div>
+<div class="sheet" id="sheet">
+  <header>
+    <button class="x" id="sheetClose">✕</button>
+    <h3 id="sheetTitle">改键</h3>
+    <button class="ok" id="sheetOk">确定</button>
+  </header>
+  <div class="body" id="sheetBody"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============================================================
+ * 1) 协议层（B4|LEN|SEQ|CC|msgpack，见 V1协议实测与改键说明.md）
+ * ============================================================ */
+const HEAD = 0xB4, TAG = 0xCC;
+const SVC = 0xae40, RX = 0xae41, TX = 0xae42;
+
+const MP = {
+  u8: v  => Uint8Array.from([0xCC, v & 0xFF]),
+  u16: v => { const n = v & 0xFFFF; return Uint8Array.from([0xCD, (n >> 8) & 0xFF, n & 0xFF]); },
+  i16: v => { const n = v & 0xFFFF; return Uint8Array.from([0xD1, (n >> 8) & 0xFF, n & 0xFF]); },
+  str(s){
+    const b = new TextEncoder().encode(s);
+    return b.length < 32 ? Uint8Array.from([0xA0 | b.length, ...b])
+                         : Uint8Array.from([0xD9, b.length, ...b]);
+  },
+  arr(items){
+    const n = items.length;
+    const head = n < 16 ? [0x90 | n] : [0xDC, (n >> 8) & 0xFF, n & 0xFF];
+    return Uint8Array.from([...head, ...items.flatMap(i => [...i])]);
+  },
+  map(pairs){
+    const n = pairs.length;
+    const head = n < 16 ? [0x80 | n] : [0xDE, (n >> 8) & 0xFF, n & 0xFF];
+    return Uint8Array.from([...head, ...pairs.flatMap(([k, v]) => [...MP.str(k), ...v])]);
+  },
+  ext(type, data){ return Uint8Array.from([0xC7, data.length, type & 0xFF, ...data]); }
+};
+
+class Decoder {
+  constructor(b){ this.d = b; this.i = 0; }
+  u8(){ return this.d[this.i++]; }
+  take(n){ const b = this.d.subarray(this.i, this.i + n); this.i += n; return b; }
+  ext(n){
+    const type = this.u8();
+    const data = this.take(n).slice();
+    const o = { $ext: type, hex: [...data].map(b => b.toString(16).padStart(2, "0")).join("") };
+    Object.defineProperty(o, "bytes", { value: data, enumerable: false });
+    return o;
+  }
+  read(){
+    const c = this.u8();
+    if (c <= 0x7f) return c;
+    if (c >= 0xe0) return c - 0x100;
+    if (c >= 0x80 && c <= 0x8f){ const o = {}; for (let i = 0; i < (c & 0x0f); i++) o[this.read()] = this.read(); return o; }
+    if (c >= 0x90 && c <= 0x9f){ const a = []; for (let i = 0; i < (c & 0x0f); i++) a.push(this.read()); return a; }
+    if (c >= 0xa0 && c <= 0xbf) return new TextDecoder().decode(this.take(c & 0x1f));
+    switch (c){
+      case 0xc0: return null;
+      case 0xc2: return false; case 0xc3: return true;
+      case 0xc4: return this.take(this.u8());
+      case 0xc5: { const n = (this.u8()<<8)|this.u8(); return this.take(n); }
+      case 0xc7: return this.ext(this.u8());
+      case 0xc8: return this.ext((this.u8()<<8)|this.u8());
+      case 0xcc: return this.u8();
+      case 0xcd: return (this.u8() << 8) | this.u8();
+      case 0xce: return ((this.u8()<<24)|(this.u8()<<16)|(this.u8()<<8)|this.u8())>>>0;
+      case 0xd0: { const v = this.u8(); return v > 127 ? v - 256 : v; }
+      case 0xd1: { const v = (this.u8()<<8)|this.u8(); return v > 32767 ? v - 65536 : v; }
+      case 0xd9: return new TextDecoder().decode(this.take(this.u8()));
+      case 0xda: { const n = (this.u8()<<8)|this.u8(); return new TextDecoder().decode(this.take(n)); }
+      case 0xdc: { const n = (this.u8()<<8)|this.u8(); const a=[]; for(let i=0;i<n;i++) a.push(this.read()); return a; }
+      case 0xde: { const n = (this.u8()<<8)|this.u8(); const o={}; for(let i=0;i<n;i++) o[this.read()]=this.read(); return o; }
+      default: throw new Error("msgpack 0x" + c.toString(16));
+    }
+  }
+}
+
+function buildFrames(payload, chunk){
+  const n = Math.ceil(payload.length / chunk);
+  const out = [];
+  for (let i = 0; i < n; i++){
+    const part = payload.subarray(i * chunk, (i + 1) * chunk);
+    let seq = n - i; if (i === 0) seq |= 0x80;
+    const f = new Uint8Array(part.length + 4);
+    f[0] = HEAD; f[1] = part.length + 4; f[2] = seq & 0xFF; f[3] = TAG;
+    f.set(part, 4); out.push(f);
+  }
+  return out;
+}
+
+class Assembler {
+  constructor(){ this.buf = new Uint8Array(0); }
+  feed(f){
+    if (f.length < 4 || f[0] !== HEAD || f[3] !== TAG || f[1] !== f.length) return null;
+    const seq = f[2], first = !!(seq & 0x80), remain = seq & 0x7f;
+    if (first) this.buf = new Uint8Array(0);
+    const m = new Uint8Array(this.buf.length + f.length - 4);
+    m.set(this.buf, 0); m.set(f.subarray(4), this.buf.length);
+    this.buf = m;
+    if (remain !== 1) return null;
+    const o = this.buf; this.buf = new Uint8Array(0); return o;
+  }
+}
+
+/* ============================================================
+ * 2) 连接与请求
+ * ============================================================ */
+const S = { dev:null, server:null, rx:null, tx:null, asm:new Assembler(), pending:new Map(),
+            proto:null, bridge:false };
+const $ = id => document.getElementById(id);
+
+function toast(msg, ms = 2200){
+  const t = $("toast"); t.textContent = msg; t.classList.add("show");
+  clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("show"), ms);
+}
+function setStatus(s, on){
+  $("status").textContent = s; $("dot").classList.toggle("on", !!on);
+}
+function respName(cmd){
+  if (S.proto !== "v1") return cmd;
+  const m = /^(get|set)_(.+)$/.exec(cmd);
+  return m ? "ret_" + m[2] : cmd;
+}
+function request(cmd, bodyBuilder, opts = {}){
+  const timeout = opts.timeout ?? 4000;
+  const expect = opts.expect || respName(cmd);
+  const pairs = [["cmd", MP.str(cmd)]];
+  if (opts.key) pairs.push(["key", MP.str(opts.key)]);
+  if (bodyBuilder) pairs.push(["map", bodyBuilder()]);
+  const payload = MP.map(pairs);
+
+  // 本地桥模式：Web Bluetooth 扫不到系统已连的设备，改走 HTTP 由 Python 侧收发
+  if (S.bridge) return bridgeRequest(payload, expect, timeout);
+
+  return new Promise((res, rej) => {
+    const t = setTimeout(() => { S.pending.delete(expect); rej(new Error(expect + " 超时")); }, timeout);
+    S.pending.set(expect, o => { clearTimeout(t); res(o); });
+    send(payload).catch(e => { clearTimeout(t); S.pending.delete(expect); rej(e); });
+  });
+}
+/* ---------------- 本地桥（HTTP → Python → BLE） ----------------
+   Web Bluetooth 在 Windows 上扫不到「已被系统连着」的 BLE 设备，所以由
+   analysis/bridge.py 用 WinRT 直接开 AE40，网页这边只负责拼 msgpack 和发 HTTP。 */
+const toHex = u8 => Array.from(u8, b => b.toString(16).padStart(2, "0")).join("");
+function hexToBytes(h){
+  const a = new Uint8Array(h.length >> 1);
+  for (let i = 0; i < a.length; i++) a[i] = parseInt(h.substr(i * 2, 2), 16);
+  return a;
+}
+async function bridgeFetch(path, body){
+  const r = await fetch(path, body === undefined
+    ? { cache: "no-store" }
+    : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (!r.ok){
+    // 桥出错时也尽量把它的 error 字段显示出来，别只给一个 500
+    let msg = "本地桥返回 " + r.status;
+    try { const j = await r.json(); if (j && j.error) msg = j.error; } catch {}
+    throw new Error(msg);
+  }
+  return r.json();
+}
+async function bridgeRequest(payload, expect, timeout){
+  const j = await bridgeFetch("api/send", { hex: toHex(payload), timeout: timeout / 1000, cmd: expect });
+  if (j.disconnected){            // 链路断了，不是命令超时
+    markUnlinked("链路已断开，正在自动重连…");
+    throw new Error("链路已断开");
+  }
+  if (j.error) throw new Error(j.error);
+  if (j.timeout) throw new Error(expect + " 超时");
+  const obj = new Decoder(hexToBytes(j.payload)).read();
+  if (!obj || obj.cmd !== expect) throw new Error("响应不匹配：" + (obj && obj.cmd));
+  return obj;
+}
+/* 链路断了：把「已连接」的外观收回来，按钮状态跟着变 */
+function markUnlinked(msg){
+  S.proto = null;
+  $("protoPill").style.display = "none";
+  $("devbar").hidden = true;
+  setStatus(msg, false);
+  $("btnConnect").disabled = false;
+  $("btnDisconnect").disabled = true;
+}
+function markLinked(how){
+  S.proto = "v1";
+  $("protoPill").style.display = "";
+  $("proto").textContent = "V1";
+  $("devbar").hidden = false;
+  setStatus(how, true);
+  $("btnDisconnect").disabled = false;
+}
+/* 探一下页面是不是由 bridge.py 托管；是就把已连状态直接接上，省掉一次点击 */
+/* 首次读配置偶尔会整片超时：页面刚打开那一瞬，桥正在处理上一个客户端 / BLE 刚重连，
+   第一批 get_* 全部踩空。表现为顶部信息条全是「—」。这里按「键盘表没读到」判定并重试一次。 */
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+/* 桥启动时的自动连接跑在后台（网页秒开），所以这里要等一下 connecting。
+   以前是先连好再起服务，网页要等十几秒才能打开。 */
+async function waitBridgeLink(max = 30){
+  for (let i = 0; i < max; i++){
+    let j;
+    try { j = await bridgeFetch("api/status"); } catch { return null; }
+    if (j.connected) return j;
+    if (!j.connecting && !j.recovering) return j;
+    setStatus(j.recovering ? "正在自动重连…" : "正在连接手柄…", false);
+    await sleep(700);
+  }
+  return null;
+}
+
+async function loadAllWithRetry(){
+  await loadAll();
+  if (kbList === null){
+    await sleep(1000);
+    await loadAll();
+  }
+}
+
+async function probeBridge(){
+  let j;
+  try { j = await bridgeFetch("api/status"); } catch { return false; }
+  if (!j || !j.bridge) return false;
+  S.bridge = true;
+  // 起看门狗：掉线能立刻反映到界面，自动重连成功后自己把表读回来
+  if (!S.watch) { S.watch = setInterval(watchBridge, 2000); }
+  if (j.connecting || j.recovering) j = (await waitBridgeLink()) || j;
+  if (typeof j.battery === "number") battery = j.battery;
+  if (!j.connected){
+    lastLink = false;
+    setStatus(j.last_error ? ("已断开：" + j.last_error) : "本地桥就绪（未连）", false);
+    return true;
+  }
+  markLinked("本地桥 · " + (j.name || "已连接"));
+  try { DEVINFO = await request("get_info", null, { key:"all", expect:"ret_info", timeout:2500 }); }
+  catch {}
+  renderDevbar();
+  await loadAllWithRetry();
+  return true;
+}
+async function bridgeConnect(){
+  // 带 wait：进后台抢连模式，最长等 90 秒。
+  // 手柄刚重启 / Switch 档时经典蓝牙还占着，链路要几十秒才会放开，
+  // 单发一次「连接」必然失败，用户只能反复点 —— 这里一次点完，桥自己循环试。
+  setStatus("连接中…（最长等 90 秒，手柄刚重启或换档位时需要）", false);
+  $("btnConnect").disabled = true;
+  try {
+    const j = await bridgeFetch("api/connect", { wait: 90 });
+    if (!j.connected) throw new Error(j.error || (j.connecting ? "已在连接中，请稍候再试" : "连接失败"));
+    if (typeof j.battery === "number") battery = j.battery;
+    markLinked("本地桥 · " + (j.name || "已连接"));
+    try { DEVINFO = await request("get_info", null, { key:"all", expect:"ret_info", timeout:2500 }); }
+    catch {}
+    renderDevbar();
+    await loadAllWithRetry();
+    toast("已连接手柄");
+  } catch (e){
+    setStatus("连接失败：" + e.message, false);
+    $("btnConnect").disabled = false;
+  }
+}
+
+/* 链路看门狗：每 2 秒问一次桥的状态。
+   手柄关机 / 换档位 / 被经典蓝牙抢走时，桥这边会判定掉线并自动重连，
+   这里负责把界面状态同步过来，重连成功后自动把五张表重新读一遍。 */
+let lastLink = null;
+async function watchBridge(){
+  if (!S.bridge) return;
+  let j;
+  try { j = await bridgeFetch("api/status"); } catch { return; }
+  if (j.connected){
+    if (lastLink === false){        // 刚恢复
+      if (typeof j.battery === "number") battery = j.battery;
+      markLinked("本地桥 · " + (j.name || "已连接"));
+      renderDevbar();
+      await loadAllWithRetry();
+      toast("已重新连接手柄");
+    }
+    lastLink = true;
+  } else {
+    if (lastLink !== false){
+      markUnlinked(j.recovering ? "链路已断开，正在自动重连…" : "未连接");
+    } else if (j.recovering){
+      setStatus("正在自动重连…", false);
+    } else if (j.last_error){
+      setStatus("已断开：" + j.last_error, false);
+    }
+    lastLink = false;
+  }
+}
+
+async function send(payload){
+  /* App 实证：currentMtu=23 且不请求更大 MTU，每片净载荷 16 字节
+     （MTU-7），帧长 20 正好等于写入上限 MTU-3。用 20 会写出 24 字节超限帧。 */
+  const frames = buildFrames(payload, parseInt($("chunk")?.value || 16, 10));  for (const f of frames){
+    if (S.rx.properties?.writeWithoutResponse) await S.rx.writeValueWithoutResponse(f);
+    else await S.rx.writeValue(f);
+    if (frames.length > 1) await new Promise(r => setTimeout(r, 15));
+  }
+}
+
+function onNotify(ev){
+  const v = ev.target.value;
+  const frame = new Uint8Array(v.buffer, v.byteOffset, v.byteLength);
+  const pl = S.asm.feed(frame.slice());
+  if (!pl) return;
+  let obj; try { obj = new Decoder(pl).read(); } catch { return; }
+  if (!obj || typeof obj !== "object") return;
+  const w = S.pending.get(obj.cmd);
+  if (w){ S.pending.delete(obj.cmd); w(obj); }
+}
+
+async function connect(forceAll = false){
+  if (!navigator.bluetooth){ alert("需要 Edge / Chrome，且页面是 localhost 或 https"); return; }
+  try {
+    setStatus("搜索中…", false);
+    const filters = [
+      { namePrefix: "IINE-" }, { namePrefix: "IINE_" },
+      // 私有模式（非 Switch）：广播名 IG05 Gamepad(BLE)，地址是随机地址
+      { namePrefix: "IG05" },
+      { name: "wireless controller" }, { name: "Wireless Controller" },
+      { name: "xbox wireless controller" }
+    ];
+    const opts = forceAll
+      ? { acceptAllDevices: true, optionalServices: [SVC, 0x180f] }
+      : { filters, optionalServices: [SVC, 0x180f] };
+
+    let dev;
+    try {
+      dev = await navigator.bluetooth.requestDevice(opts);
+    } catch (e){
+      // Windows 里已经连着的手柄可能不再广播，过滤器就扫不到 —— 退一步列全部设备
+      if (e.name === "NotFoundError" && !forceAll){
+        if (confirm("没扫到 IINE 手柄。\n\n如果它已经连在系统的蓝牙里（比如正被当成鼠标用），可能不再广播。\n要不要列出附近全部蓝牙设备，手动挑一个？")){
+          return connect(true);
+        }
+      }
+      throw e;
+    }
+    S.dev = dev;
+    dev.addEventListener("gattserverdisconnected", () => {
+      setStatus("已断开", false); $("btnConnect").disabled = false; $("btnDisconnect").disabled = true;
+    });
+    setStatus("连接中…", false);
+    const server = await dev.gatt.connect();
+    S.server = server;
+    const svc = await server.getPrimaryService(SVC);
+    S.rx = await svc.getCharacteristic(RX);
+    S.tx = await svc.getCharacteristic(TX);
+    await S.tx.startNotifications();
+    S.tx.addEventListener("characteristicvaluechanged", onNotify);
+
+    // 协议识别：V1 的 get_info 必须带 key:"all"。这条同时就是设备信息，留着显示。
+    try {
+      DEVINFO = await request("get_info", null, { key:"all", expect:"ret_info", timeout:2500 });
+      S.proto = "v1";
+    } catch {
+      try { await request("g_devinfo", null, { expect:"g_devinfo", timeout:2000 }); S.proto = "v2"; }
+      catch { S.proto = null; }
+    }
+    $("protoPill").style.display = "";
+    $("proto").textContent = S.proto ? S.proto.toUpperCase() : "未知";
+    setStatus("已连接", true);
+    $("btnConnect").disabled = true; $("btnDisconnect").disabled = false;
+    $("devbar").hidden = false;
+    renderDevbar();
+
+    if (S.proto === "v1"){
+      await readBattery();     // 标准 GATT 0x180F，和 App 一样在连上后读
+      await loadAll();         // 按 App 的顺序把五张表读全
+    } else {
+      toast("这不是 V1 手柄，本页只处理 V1 的键位映射");
+    }
+  } catch (e){
+    console.error(e);
+    setStatus("连接失败：" + e.message, false);
+  }
+}
+
+/* ============================================================
+ * 3) 键位映射数据
+ * ============================================================ */
+const KEY_NAMES = {
+  1:"A",2:"B",3:"X",4:"Y",5:"L",6:"R",7:"ZL",8:"ZR",9:"Select",10:"Start",
+  11:"L3",12:"R3",13:"▼",14:"▲",15:"▶",16:"◀",17:"HOME",18:"L3D",19:"R3D",
+  20:"L4",21:"R4",22:"L5",23:"R5",92:"Sensor",93:"-",94:"+",95:"CAP",96:"Turbo",
+  97:"ML",98:"MR",99:"Mode",100:"Fn",101:"SL",102:"SR",103:"M1",104:"M2",
+  105:"M3",106:"M4",107:"M5",108:"M6"
+};
+const kname = k => KEY_NAMES[k] || ("K" + k);
+
+/* 设计空间 1080x1290（App 卡片实测比例）。
+   底图左上角 (145,415)，尺寸 783x466。
+   TAGPOS = 每个按键标签在小红书设计空间里的绝对位置（px），全部来自 adb uiautomator
+   抓到的真实 bounds 中心 + 截图连通域检测，两路数据吻合。 */
+const DS = { W:1080, H:1290, px:145, py:415, pw:783, ph:466 };
+
+const TAGPOS = {
+  7:  [132,   97],  // ZL
+  8:  [945,   97],  // ZR
+  93: [457,  214],  // -
+  94: [623,  214],  // +
+  5:  [175,  274],  // L
+  6:  [905,  274],  // R
+  103:[ 47,  629],  // M1
+  95: [455,  985],  // 截图（手柄底边左侧圆键，与本体印刷一致）
+  17: [625,  985],  // HOME（手柄底边右侧圆键）
+  14: [238, 1039],  // ▲
+  3:  [830, 1044],  // X
+  1:  [947, 1131],  // A
+  4:  [716, 1131],  // Y
+  16: [141, 1136],  // ◀
+  15: [333, 1136],  // ▶
+  13: [238, 1206],  // ▼
+  2:  [830, 1233]   // B
+};
+
+/* ---- 六个栏目 ---- */
+const COLS = {
+  pad:   { title:"手柄", sheet:"更改按键", kind:"pad" },
+  kb:    { title:"键盘", sheet:"键盘改键", kind:"kb" },
+  mouse: { title:"鼠标", sheet:"鼠标设置", kind:"mouse" },
+  media: { title:"媒体键", sheet:"媒体键改键", kind:"media" },
+  other: { title:"其他", sheet:"手柄设置", kind:"settings" }
+};
+
+/* ---- 选项集（文案逐条取自 App 的弹窗）---- */
+const KB_MODS = [
+  ["LCtrl/LControl", 0x01], ["LShift", 0x02], ["LAlt/LOption", 0x04], ["LWin/LCommand", 0x08],
+  ["RCtrl/RControl", 0x10], ["RShift", 0x20], ["RAlt/ROption", 0x40], ["RWin/RCommand", 0x80]
+];
+const KB_KEYS = (() => {
+  const a = [];
+  for (let i = 0; i < 26; i++) a.push([String.fromCharCode(65 + i), 0x04 + i]);
+  for (let i = 0; i < 9; i++) a.push([String(i + 1), 0x1E + i]);
+  a.push(["0", 0x27], ["Enter", 0x28], ["Esc", 0x29], ["Backspace", 0x2A], ["Tab", 0x2B], ["Space", 0x2C]);
+  // 符号键（标准 HID 键盘页）
+  a.push(["-", 0x2D], ["=", 0x2E], ["[", 0x2F], ["]", 0x30], ["\\", 0x31]);
+  a.push([";", 0x33], ["'", 0x34], ["`", 0x35], [",", 0x36], [".", 0x37], ["/", 0x38]);
+  a.push(["Caps Lock", 0x39]);
+  for (let i = 0; i < 12; i++) a.push(["F" + (i + 1), 0x3A + i]);
+  a.push(["Print Screen", 0x46], ["Scroll Lock", 0x47], ["Pause", 0x48]);
+  a.push(["Insert", 0x49], ["Home", 0x4A], ["Page Up", 0x4B], ["Delete", 0x4C], ["End", 0x4D], ["Page Down", 0x4E]);
+  a.push(["Right", 0x4F], ["Left", 0x50], ["Down", 0x51], ["Up", 0x52]);
+  return a;
+})();
+const MOUSE_OPS = ["鼠标左键", "鼠标右键", "滚轮上", "滚轮下", "鼠标右移", "鼠标左移", "鼠标下移", "鼠标上移"];
+const MEDIA_OPS = ["静音", "音量+", "音量-", "播放/暂停", "上一首", "下一首", "亮度+", "亮度-", "睡眠"];
+
+/* ---- 媒体键：HID Consumer Page usage（固件 ret_cs 里的 cs 字段就是这个）----
+   实测出厂：A/B=205(播放暂停)、X=183(停止)、Y=226(静音)、
+            ↑=233(音量+)、↓=234(音量-)、←=182(上一首)、→=181(下一首)。 */
+const CS_NAME = {
+  0x30: "电源", 0x32: "睡眠",
+  0xB0: "播放", 0xB1: "暂停", 0xB3: "快进", 0xB4: "快退",
+  0xB5: "下一首", 0xB6: "上一首", 0xB7: "停止",
+  0xCD: "播放/暂停",
+  0xE2: "静音", 0xE9: "音量+", 0xEA: "音量-",
+  0x6F: "亮度+", 0x70: "亮度-",
+  0x19: "上一页", 0x18: "下一页", 0x22: "浏览器", 0x23: "主页", 0x24: "返回",
+  0x183: "收藏", 0x192: "计算器", 0x194: "我的电脑", 0x1A6: "邮件"
+};
+const CS_OPTS = [
+  ["静音", 0xE2], ["音量+", 0xE9], ["音量-", 0xEA],
+  ["播放/暂停", 0xCD], ["下一首", 0xB5], ["上一首", 0xB6],
+  ["亮度+", 0x6F], ["亮度-", 0x70], ["睡眠", 0x32],
+  ["停止", 0xB7]
+];
+const csName = v => CS_NAME[v] || ("0x" + Number(v).toString(16).toUpperCase());
+
+/* ---- 鼠标：ret_mouse 的 {but, w, x, y} 实测含义 ----
+   but: 1=左键 2=右键  |  w: -1=滚轮上 +1=滚轮下
+   x/y: 带符号的移动量，绝对值就是 App 里那个「鼠标移动距离」滑块（实测 2 = 默认，最大 48）
+   存的是方向签名 sx/sy，真正写入时再乘距离。顺序与 App 弹窗一致。 */
+const MOUSE_OPTS = [
+  ["鼠标左键", { but: 1, w: 0, sx: 0, sy: 0 }],
+  ["鼠标右键", { but: 2, w: 0, sx: 0, sy: 0 }],
+  ["滚轮上",   { but: 0, w: -1, sx: 0, sy: 0 }],
+  ["滚轮下",   { but: 0, w: 1, sx: 0, sy: 0 }],
+  ["鼠标右移", { but: 0, w: 0, sx: 1, sy: 0 }],
+  ["鼠标左移", { but: 0, w: 0, sx: -1, sy: 0 }],
+  ["鼠标下移", { but: 0, w: 0, sx: 0, sy: 1 }],
+  ["鼠标上移", { but: 0, w: 0, sx: 0, sy: -1 }]
+];
+const MOUSE_DIST_MAX = 48;
+
+/* 由固件里的 {but,w,x,y} 反推是哪个操作 */
+function mouseSig(m){
+  if (!m) return null;
+  if (m.but === 1) return { but: 1, w: 0, sx: 0, sy: 0 };
+  if (m.but === 2) return { but: 2, w: 0, sx: 0, sy: 0 };
+  if (m.w === -1)  return { but: 0, w: -1, sx: 0, sy: 0 };
+  if (m.w === 1)   return { but: 0, w: 1, sx: 0, sy: 0 };
+  if (m.x > 0) return { but: 0, w: 0, sx: 1, sy: 0 };
+  if (m.x < 0) return { but: 0, w: 0, sx: -1, sy: 0 };
+  if (m.y > 0) return { but: 0, w: 0, sx: 0, sy: 1 };
+  if (m.y < 0) return { but: 0, w: 0, sx: 0, sy: -1 };
+  return null;
+}
+function mouseName(m){
+  const s = mouseSig(m);
+  if (!s) return "—";
+  const hit = MOUSE_OPTS.find(([, o]) => o.but === s.but && o.w === s.w && o.sx === s.sx && o.sy === s.sy);
+  if (!hit) return "—";
+  const short = hit[0].replace("鼠标", "");
+  const d = Math.max(Math.abs(m.x | 0), Math.abs(m.y | 0));
+  return (s.sx || s.sy) ? `${short} ${d}` : short;
+}
+/* 方向签名 → 弹窗按钮上的全名 */
+function moLabel(s){
+  if (!s) return "—";
+  const hit = MOUSE_OPTS.find(([, o]) => o.but === s.but && o.w === s.w && o.sx === s.sx && o.sy === s.sy);
+  return hit ? hit[0] : "—";
+}
+
+/* HID 键码 → 名字。注意：修饰键的**位掩码**（1/2/4/8…）和 HID **usage**（0xE0…0xE7）
+   是两套东西，数值上还会和字母键撞（0x04 既是 'A' 又是 LAlt 的位），必须分开存。 */
+const HID_NAME = (() => {
+  const t = {};
+  for (const [n, c] of KB_KEYS) t[c] = n;      // usage → 名字
+  return t;
+})();
+const MOD_USAGE = {
+  0xE0: "LCtrl", 0xE1: "LShift", 0xE2: "LAlt", 0xE3: "LWin",
+  0xE4: "RCtrl", 0xE5: "RShift", 0xE6: "RAlt", 0xE7: "RWin"
+};
+const nameOf = c => HID_NAME[c] || MOD_USAGE[c] || ("0x" + c.toString(16).toUpperCase());
+
+/* 出厂 17 条映射（实测回读）。key = 固件槽位号，arr = [键码1, 键码2, fn]。
+   槽位号与物理按键的对应关系**固件不给**，这里按「出厂输出键名」反推：
+   出厂时 A 键输出 'A'、START 输出 Enter、十字上输出 Up……据此把槽位挂到按键上。
+   gp 是 gamepad_key_location.json 里的按键编号，用来定位标签落点。 */
+const FACTORY = {
+  0:[0x04,0,0], 1:[0x05,0,0], 3:[0x1B,0,0], 4:[0x1C,0,0], 6:[0x0F,0,0], 7:[0x15,0,0],
+  8:[0x00,0,4], 9:[0x28,0,0], 10:[0x2A,0,0], 11:[0x2C,0,0], 12:[0xE1,0,0], 15:[0xE0,0,0],
+  16:[0x52,0,0], 17:[0x51,0,0], 18:[0x50,0,0], 19:[0x4F,0,0], 23:[0x4C,0,0]
+};
+
+/* 槽位 → 物理按键。依据两条：
+   ① A 键 = 槽位 0 已实测确认（App 改 A→Z 后读回 slot0 由 04 变 1d）；
+   ② 其余按 App「键盘」栏的红标签逐条对齐（ZL=LAlt、-=Backspace、+=Space、ZR=Enter、M1=Delete）。
+   ③ 复古迷你手柄2 没有摇杆，L3/R3 不存在；槽位 12 / 15 落在手柄底部那两个圆键上，
+      即「截图(CAPTURE)」和「HOME」——App 键盘栏不画这两个的标签，但「手柄」栏里能改。
+   注意：gp 是手柄按键编号（GamepadKey.rawValue），用来查底图坐标；slot 是固件 set_kb 的 key。 */
+const SLOTS = [
+  { slot: 0, gp:  1, hint:"A" },
+  { slot: 1, gp:  2, hint:"B" },
+  { slot: 3, gp:  3, hint:"X" },
+  { slot: 4, gp:  4, hint:"Y" },
+  { slot: 6, gp:  5, hint:"L" },
+  { slot: 7, gp:  6, hint:"R" },
+  { slot: 8, gp:  7, hint:"ZL" },
+  { slot: 9, gp:  8, hint:"ZR" },      // 出厂 Enter
+  { slot:10, gp: 93, hint:"-" },       // 出厂 Backspace
+  { slot:11, gp: 94, hint:"+" },       // 出厂 Space
+  { slot:12, gp: 95, hint:"截图" },    // 出厂 LShift（无摇杆机型，槽位落在底边左圆键）
+  { slot:15, gp: 17, hint:"HOME" },    // 出厂 LCtrl（底边右圆键）
+  { slot:16, gp: 14, hint:"▲" },
+  { slot:17, gp: 13, hint:"▼" },
+  { slot:18, gp: 16, hint:"◀" },
+  { slot:19, gp: 15, hint:"▶" },
+  { slot:23, gp:103, hint:"M1" }       // 出厂 Delete
+];
+const SLOT_BY_GP = new Map(SLOTS.map(s => [s.gp, s]));
+const SLOT_NAME = Object.fromEntries(SLOTS.map(s => [s.slot, s.hint]));
+const slotName = v => SLOT_NAME[v] || ("K" + v);
+
+/* ---- 十字键一键布局 ----
+   槽位 16=上 17=下 18=左 19=右（SLOTS 里就是这么对应的）。
+   基准姿态：手柄横握，十字键在左端，上键朝屏幕上方 —— 这就是「横着拿」，不用改。
+   把整只手柄在屏幕平面内转 90° 就成竖握，但转的方向有两个，十字键分别落在上端 / 下端：
+     横着拿      0°     上→上  下→下  左→左  右→右
+     竖握·键在上 顺90°  上→右  下→左  左→上  右→下   （十字键转到了上端）
+     竖握·键在下 逆90°  上→左  下→右  左→下  右→上   （十字键转到了下端）
+   手柄页改的是 gp（输出的槽位号），鼠标页改的是 x/y 的符号。 */
+const DPAD_SLOTS = [16, 17, 18, 19];
+const DIR_GP  = { up:16, down:17, left:18, right:19 };
+const DIR_VEC = { up:{x:0, y:-1}, down:{x:0, y:1}, left:{x:-1, y:0}, right:{x:1, y:0} };
+const DPAD_LAYOUTS = {
+  h:  { name:"横着拿",        map:{ 16:"up",    17:"down", 18:"left",  19:"right" } },
+  vu: { name:"竖着拿·键在上", map:{ 16:"right", 17:"left", 18:"up",    19:"down"  } },
+  vd: { name:"竖着拿·键在下", map:{ 16:"left",  17:"right",18:"down",  19:"up"    } }
+};
+
+/* 「手柄」栏的可选目标就是这 17 个槽位本身（直接映射，单向赋值不互换）。
+   实测依据：官方 App 点「应用」后 logcat 抓到的 set_gp 里，每条都是 {key=<槽位>, gp=<槽位>}，
+   gp 值域与 get_kb 的 key 完全一致，**不是** GamepadKey.rawValue。
+   证据：把右圆（CAP，槽位 15）改成 L 之后，回读 key=15 gp=6 —— 6 正是「L」那个槽位。 */
+
+/* ============================================================
+ * 4) 页面状态
+ * ============================================================ */
+let KEYS = [];          // [{key,x,y}]
+let kbList = null;      // V1 的 17 条键盘映射
+let gpList = null;      // V1 的手柄键互换映射（get_gp）
+let mouseList = null;   // 槽位 -> {but,w,x,y}（get_mouse）
+let csList = null;      // 槽位 -> consumer usage（get_cs）
+let sleepCfg = null;    // {discon, con}（get_sleep）
+let DEVINFO = null;     // get_info 的回包 {cmd, mode_name, version}
+let battery = null;     // 电量 0-100（GATT 0x180F）
+let col = "pad";
+let dirty = false;      // 键盘栏有未写入改动
+let dirtyGp = false;    // 手柄栏有未写入改动
+let dirtyMouse = false; // 鼠标栏
+let dirtyCs = false;    // 媒体键栏
+let dirtySleep = false; // 关机时间
+const draft = new Map();  // 槽位key -> {k0,k1,fn}
+const draftGp = new Map(); // 槽位key -> {gp,times}
+/* 手柄栏的改键方式：assign = 单向赋值（默认），swap = 交换两键。
+   固件只照表执行，不会自己解开旧映射，所以交换必须由网页把两条一起改。 */
+let gpMode = (localStorage.getItem("gpMode") === "swap") ? "swap" : "assign";
+const draftMouse = new Map(); // 槽位key -> {but,w,x,y}
+const draftCs = new Map();    // 槽位key -> consumer usage
+
+/* 每个栏目下按键的「显示值」。参数是物理按键编号 gp，内部换算到固件槽位。 */
+function labelOf(gp){
+  const c = COLS[col].kind;
+  if (c === "raw") return kname(gp);
+  const s = SLOT_BY_GP.get(gp);
+  if (!s) return "—";
+  if (c === "pad"){
+    const d = draftGp.get(s.slot) || (gpList && gpList.get(s.slot));
+    return (d && typeof d.gp === "number") ? slotName(d.gp) : s.hint;
+  }
+  if (c === "mouse"){
+    const m = (draftMouse && draftMouse.get(s.slot)) || (mouseList && mouseList.get(s.slot));
+    return mouseName(m);
+  }
+  if (c === "media"){
+    const v = (draftCs && draftCs.get(s.slot));
+    if (typeof v === "number") return csName(v);
+    const cs = csList && csList.get(s.slot);
+    return typeof cs === "number" ? csName(cs) : "—";
+  }
+  const d = draft.get(s.slot) || FACTORY[s.slot];
+  if (!d) return "—";
+  if (c === "kb"){
+    const k0 = d[0], k1 = d[1], fn = d[2] || 0;
+    const parts = [];
+    for (const [n, b] of KB_MODS) if (fn & b) parts.push(n.split("/")[0]);
+    if (k0) parts.push(nameOf(k0));
+    if (k1) parts.push(nameOf(k1));
+    return parts.length ? parts.join("+") : "—";
+  }
+  return "—";
+}
+function isMapped(gp){
+  const c = COLS[col].kind;
+  if (c === "raw") return false;
+  const s = SLOT_BY_GP.get(gp);
+  if (!s) return false;
+  if (c === "pad"){
+    // 手柄栏每个键都有映射（出厂即"映射为自己"），一律高亮
+    return true;
+  }
+  if (c === "kb"){
+    const d = draft.get(s.slot) || FACTORY[s.slot];
+    return !!(d && (d[0] || d[1] || d[2]));
+  }
+  if (c === "mouse"){
+    const m = draftMouse.get(s.slot) || (mouseList && mouseList.get(s.slot));
+    return !!(m && (m.but || m.w || m.x || m.y));
+  }
+  if (c === "media"){
+    const v = draftCs.has(s.slot) ? draftCs.get(s.slot) : (csList && csList.get(s.slot));
+    return typeof v === "number" && v !== 0;
+  }
+  return false;
+}
+
+/* ============================================================
+ * 5) 渲染手柄与标签
+ * ============================================================ */
+/* 当前十字键映射是否正好等于某个预设（用来给按钮打高亮） */
+function detectDpad(){
+  if (col !== "pad" && col !== "mouse") return null;
+  for (const [k, lay] of Object.entries(DPAD_LAYOUTS)){
+    let ok = true;
+    for (const s of DPAD_SLOTS){
+      const want = lay.map[s];
+      if (col === "pad"){
+        const d = draftGp.get(s) || (gpList && gpList.get(s));
+        // gp 表为空时表示"没做过互换"，等价于每个键输出自己 → 就是横着拿
+        const got = d ? (d.gp | 0) : s;
+        if (got !== DIR_GP[want]){ ok = false; break; }
+      } else {
+        const d = draftMouse.get(s) || (mouseList && mouseList.get(s));
+        const v = DIR_VEC[want];
+        if (!d || Math.sign(d.x | 0) !== v.x || Math.sign(d.y | 0) !== v.y){ ok = false; break; }
+      }
+    }
+    if (ok) return k;
+  }
+  return null;
+}
+
+/* 手柄栏的改键方式开关：单向赋值 / 交换两键（只在「手柄」栏出现） */
+function renderGpMode(){
+  const bar = $("gpmodebar");
+  if (!bar) return;
+  bar.hidden = (COLS[col].kind !== "pad");
+  $("gpmode").querySelectorAll("button").forEach(b =>
+    b.classList.toggle("on", b.dataset.gpmode === gpMode));
+  $("gptip").textContent = gpMode === "swap"
+    ? "交换：两个键互相调换，改 A→B 时目标键变成 A 原来的输出"
+    : "单向：只改这个键，目标键保持原样";
+}
+
+function renderQuick(){  const cur = detectDpad();
+  $("qopts").querySelectorAll("button").forEach(b =>
+    b.classList.toggle("on", b.dataset.dpad === cur));
+  const loaded = (col === "pad") ? !!gpList : !!mouseList;
+  $("qtip").textContent = !loaded
+    ? "还没读到配置（连上手柄后自动读）"
+    : cur
+      ? "当前：" + DPAD_LAYOUTS[cur].name
+      : "当前四个方向和预设都不完全一致，点一个即可一次改好";
+}
+
+/* 一键套用：只动十字那 4 个槽位，其余键不碰；改完仍要按「应用」才写进固件 */
+function applyDpad(key){
+  const lay = DPAD_LAYOUTS[key];
+  if (!lay) return;
+  if (col === "pad"){
+    for (const s of DPAD_SLOTS){
+      const base = draftGp.get(s) || (gpList && gpList.get(s)) || {};
+      draftGp.set(s, { gp: DIR_GP[lay.map[s]], times: base.times });
+    }
+    dirtyGp = true;
+  } else if (col === "mouse"){
+    for (const s of DPAD_SLOTS){
+      const cur = draftMouse.get(s) || (mouseList && mouseList.get(s));
+      // 距离沿用这个键原本的步长，没设过就按 2
+      const d = cur ? (Math.max(Math.abs(cur.x | 0), Math.abs(cur.y | 0)) || 2) : 2;
+      const v = DIR_VEC[lay.map[s]];
+      draftMouse.set(s, { but: 0, w: 0, x: v.x * d, y: v.y * d });
+    }
+    dirtyMouse = true;
+  } else return;
+  $("btnApply").disabled = false;
+  renderPad();
+  toast("方向键已设为「" + lay.name + "」，按「应用」写入");
+}
+
+function renderPad(){
+  const kind = COLS[col].kind;
+  const isOther = kind === "settings";
+  // 手柄栏的提示文案依赖 gp 表是否为空，读完配置要跟着刷新
+  if (kind === "pad") setColHint();
+  $("stage").hidden = isOther;
+  $("settings").hidden = !isOther;
+  // 「其他」栏也能改（关机时间），所以应用按钮按 dirtySleep 判断，不再无条件禁用
+  $("btnApply").disabled = isOther
+    ? !dirtySleep
+    : !(dirty || dirtyGp || dirtyMouse || dirtyCs || gpEmpty());
+  // 方向键快捷键只在手柄 / 鼠标两栏出现
+  const showQuick = (kind === "pad" || kind === "mouse");
+  $("quick").hidden = !showQuick;
+  renderGpMode();
+  if (isOther){ renderSettings(); return; }
+  if (showQuick) renderQuick();
+
+  const box = $("padbox");
+  [...box.querySelectorAll(".hk,.tag,.lines")].forEach(e => e.remove());
+
+  const pct = (v, total) => (v / total * 100) + "%";
+  const segs = [];
+
+  // 连线层（在底图之上、标签之下）
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("class", "lines");
+  svg.setAttribute("viewBox", `0 0 ${DS.W} ${DS.H}`);
+  box.appendChild(svg);
+
+  for (const it of KEYS){
+    const k = it.key;
+
+    // 按键本体：底图归一化坐标 → 设计空间像素
+    const ax = DS.px + it.x * DS.pw;
+    const ay = DS.py + it.y * DS.ph;
+    const hk = document.createElement("button");
+    hk.className = "hk" + (isMapped(k) ? " mapped" : "");
+    hk.style.left = pct(ax, DS.W);
+    hk.style.top  = pct(ay, DS.H);
+    hk.title = kname(k);
+    hk.innerHTML = '<span class="ring"></span>';
+    hk.addEventListener("click", () => openSheet(k));
+    box.appendChild(hk);
+  }
+
+  // 标签只给有固件槽位的按键画
+  for (const s of SLOTS){
+    const it = KEYS.find(k => k.key === s.gp);
+    if (!it) continue;
+    const ax = DS.px + it.x * DS.pw;
+    const ay = DS.py + it.y * DS.ph;
+    const tp = TAGPOS[s.gp];
+    if (!tp) continue;
+    segs.push([ax, ay, tp[0], tp[1]]);
+
+    const tag = document.createElement("div");
+    tag.className = "tag" + (isMapped(s.gp) ? " mapped" : "");
+    tag.textContent = labelOf(s.gp);
+    tag.title = `${s.hint}（槽位 ${s.slot}）→ ${labelOf(s.gp)}`;
+    tag.style.left = pct(tp[0], DS.W);
+    tag.style.top  = pct(tp[1], DS.H);
+    tag.addEventListener("click", () => openSheet(s.gp));
+    box.appendChild(tag);
+  }
+
+  const path = segs.map(([x1, y1, x2, y2]) => {
+    // 只画到标签边缘附近，短一截，避免穿进标签
+    const dx = x2 - x1, dy = y2 - y1;
+    const len = Math.hypot(dx, dy) || 1;
+    const cut = Math.min(38, len * 0.55);
+    const ex = x1 + dx * (1 - cut / len), ey = y1 + dy * (1 - cut / len);
+    return `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${ex.toFixed(1)}" y2="${ey.toFixed(1)}"/>`;
+  }).join("");
+  svg.innerHTML = `<g stroke="#cfd6df" stroke-width="1.6" opacity="0.5">${path}</g>`;
+}
+
+/* 「其他」栏：无操作关机时间 + 初始化手柄（ret_sleep 的 discon / con） */
+function renderSettings(){
+  const v = sleepCfg ? (sleepCfg.discon | 0) : 5;
+  $("sleepRange").value = v;
+  $("sleepVal").textContent = v === 0 ? "永不" : (v + " 分钟");
+}
+
+/* ============================================================
+ * 6) 改键面板
+ * ============================================================ */
+let curKey = null;        // 当前编辑的**固件槽位号**
+let curGp = null;         // 对应的物理按键编号（只为显示）
+let pick = { mods:[], keys:[], op:null };
+
+function openSheet(gp){
+  const kind = COLS[col].kind;
+  const s = SLOT_BY_GP.get(gp);
+  if (!s){ toast("这个按键在固件里没有可配置的槽位"); return; }
+  curKey = s.slot; curGp = gp;
+  pick = { mods:[], keys:[], op:null, gp:null, dist:2 };
+  if (kind === "pad"){
+    const d = draftGp.get(s.slot) || (gpList && gpList.get(s.slot));
+    // 没读到就默认「映射为自己」（gp 用的是槽位号，等于 s.slot）
+    pick.gp = (d && typeof d.gp === "number") ? d.gp : s.slot;
+  } else if (kind === "kb"){
+    const d = draft.get(s.slot) || FACTORY[s.slot];
+    if (d){
+      pick.keys = [d[0], d[1]].filter(v => v);
+      pick.mods = KB_MODS.filter(([, b]) => (d[2] || 0) & b).map(([, b]) => b);
+    }
+  } else if (kind === "mouse"){
+    const m = draftMouse.get(s.slot) || (mouseList && mouseList.get(s.slot));
+    if (m){
+      pick.op = mouseSig(m);
+      pick.dist = Math.max(Math.abs(m.x | 0), Math.abs(m.y | 0)) || 2;
+    }
+  } else if (kind === "media"){
+    const v = draftCs.has(s.slot) ? draftCs.get(s.slot) : (csList && csList.get(s.slot));
+    pick.op = (typeof v === "number") ? v : null;
+  }
+  $("sheetTitle").textContent = COLS[col].sheet;
+  // 手柄栏是「点图上的键即生效」，跟 App 一样没有确认按钮
+  $("sheetOk").style.display = (kind === "pad") ? "none" : "";
+  $("mask").classList.add("open");
+  $("sheet").classList.add("open");
+  renderSheet();
+}
+
+function closeSheet(){
+  $("mask").classList.remove("open");
+  $("sheet").classList.remove("open");
+  curKey = null; curGp = null;
+}
+
+function renderSheet(){
+  const body = $("sheetBody");
+  const kind = COLS[col].kind;
+  const s = SLOTS.find(x => x.gp === curGp);
+
+  /* 「手柄」栏照 App 的样子：只有一个原始键位框 + 提示，再给一张手柄示意图，
+     直接在图上点要换成的那个键（App 里点完立刻关窗、主页面标签变色，再点「应用」） */
+  if (kind === "pad"){
+    body.innerHTML = `
+      <div class="io single">
+        <div class="item">
+          <div class="box">${s ? s.hint : kname(curGp)}</div>
+          <div class="cap">原始键位</div>
+        </div>
+      </div>
+      <p class="pickhint">请选择一个按键</p>
+      <div class="sheetpad" id="sheetpad">
+        <img class="spbase" src="assets/gamepad_1000_2001_front.png" alt="">
+      </div>`;
+    renderSheetPad();
+    return;
+  }
+
+  const cur = kind === "kb" ? labelOf(curGp)
+            : kind === "mouse" ? moLabel(pick.op)
+            : kind === "media" ? (typeof pick.op === "number" ? csName(pick.op) : "—")
+            : (pick.op || "—");
+
+  let html = `
+    <div class="io">
+      <div class="item">
+        <div class="box">${s ? s.hint : kname(curGp)}</div>
+        <div class="cap">原始键位</div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="item cur">
+        <div class="box">${cur === "—" ? "" : esc(cur)}</div>
+        <div class="cap">您的键位</div>
+      </div>
+    </div>`;
+
+  if (kind === "kb"){
+    html += `<div class="grp"><h4>修饰键（最多选择 2 个）</h4><div class="opts" data-g="mod">` +
+      KB_MODS.map(([n, b]) =>
+        `<button data-b="${b}" class="${pick.mods.includes(b) ? "on" : ""}">${n}</button>`).join("") +
+      `</div></div>`;
+    html += `<div class="grp"><h4>普通按键（最多选择 2 个）</h4><div class="opts" data-g="key">` +
+      KB_KEYS.map(([n, c]) =>
+        `<button data-c="${c}" class="${pick.keys.includes(c) ? "on" : ""}">${n}</button>`).join("") +
+      `</div></div>`;
+    html += `<p class="note">写入格式：<code>kb = [键码1, 键码2, 槽位号]</code>，两个普通键会同时按下，` +
+            `修饰键合成一个字节写进 <code>fn</code>（所以能做 <code>Ctrl+C</code> 这种组合）。` +
+            `第 3 字节是固件维护的槽位号，写入时原样带回。</p>`;
+  } else if (kind === "mouse"){
+    const same = o => pick.op && o.but === pick.op.but && o.w === pick.op.w && o.sx === pick.op.sx && o.sy === pick.op.sy;
+    html += `<div class="grp"><h4>选择鼠标操作</h4><div class="opts" data-g="mop">` +
+      MOUSE_OPTS.map(([n, o]) =>
+        `<button data-mn="${n}" class="${same(o) ? "on" : ""}">${n}</button>`).join("") +
+      `</div></div>`;
+    const isMove = !!(pick.op && (pick.op.sx || pick.op.sy));
+    html += `<div class="grp"><h4>鼠标移动距离</h4>
+      <div style="display:flex;align-items:center;gap:12px">
+        <input type="range" id="mDist" min="1" max="${MOUSE_DIST_MAX}" step="1" value="${pick.dist}"
+               style="flex:1;accent-color:var(--accent)" ${isMove ? "" : "disabled"}>
+        <b style="color:var(--accent);min-width:34px;text-align:right">${pick.dist}</b>
+      </div>
+      <p class="note" style="margin:8px 0 0">${isMove ? "拖动调整移动步长（1–48）。" : "只有「移动」类操作才用得上距离。"}</p>
+    </div>`;
+    html += `<p class="note">写入格式（logcat 实抓）：<code>key</code>/<code>but</code> 是 uint8，` +
+            `<code>w</code>/<code>x</code>/<code>y</code> 是 int16。移动距离就是 <code>x</code>/<code>y</code> 的绝对值。</p>`;
+  } else if (kind === "media"){
+    html += `<div class="grp"><h4>选择一个媒体键操作</h4><div class="opts" data-g="cop">` +
+      CS_OPTS.map(([n, v]) =>
+        `<button data-cs="${v}" class="${pick.op === v ? "on" : ""}">${n}</button>`).join("") +
+      `</div></div>`;
+    html += `<p class="note">写入格式（logcat 实抓）：<code>key</code>/<code>cs</code> 都是 <b>uint16</b>；` +
+            `<code>cs</code> 是 HID Consumer Page 的 usage（静音 0xE2、音量+ 0xE9、播放暂停 0xCD…）。</p>`;
+  }
+
+  body.innerHTML = html;
+
+  body.querySelectorAll('[data-g="mod"] button').forEach(b => b.onclick = () => {
+    const v = +b.dataset.b;
+    if (pick.mods.includes(v)) pick.mods = pick.mods.filter(x => x !== v);
+    else { if (pick.mods.length >= 2) pick.mods.shift(); pick.mods.push(v); }
+    renderSheet();
+  });
+  body.querySelectorAll('[data-g="key"] button').forEach(b => b.onclick = () => {
+    const v = +b.dataset.c;
+    if (pick.keys.includes(v)) pick.keys = pick.keys.filter(x => x !== v);
+    else { if (pick.keys.length >= 2) pick.keys.shift(); pick.keys.push(v); }
+    renderSheet();
+  });
+  body.querySelectorAll('[data-g="mop"] button').forEach(b => b.onclick = () => {
+    const hit = MOUSE_OPTS.find(([n]) => n === b.dataset.mn);
+    if (hit) pick.op = { ...hit[1] };
+    renderSheet();
+  });
+  if ($("mDist")){
+    $("mDist").addEventListener("input", e => {
+      pick.dist = +e.target.value;
+      const nb = e.target.parentElement.querySelector("b");
+      if (nb) nb.textContent = pick.dist;
+    });
+  }
+  body.querySelectorAll('[data-g="cop"] button').forEach(b => b.onclick = () => {
+    pick.op = +b.dataset.cs; renderSheet();
+  });
+}
+
+/* 弹窗里的手柄示意图：底图 + 17 个可点的键标签，坐标复用页面那套（设计空间 1080×1290） */
+function renderSheetPad(){
+  const box = $("sheetpad");
+  if (!box) return;
+  for (const s of SLOTS){
+    const tp = TAGPOS[s.gp];
+    if (!tp) continue;
+    const b = document.createElement("button");
+    b.className = "spick" + (pick.gp === s.slot ? " on" : "");
+    b.textContent = s.hint;
+    b.style.left = (tp[0] / DS.W * 100) + "%";
+    b.style.top  = (tp[1] / DS.H * 100) + "%";
+    b.addEventListener("click", () => { pick.gp = s.slot; commitSheet(); });
+    box.appendChild(b);
+  }
+}
+
+function esc(s){ return String(s).replace(/[&<>]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;" }[c])); }
+
+function commitSheet(){
+  if (curKey == null) return;
+  const kind = COLS[col].kind;
+  if (kind === "kb"){
+    const fn = pick.mods.reduce((a, b) => a | b, 0);
+    draft.set(curKey, [pick.keys[0] || 0, pick.keys[1] || 0, fn]);
+    dirty = true;
+  } else if (kind === "pad"){
+    if (pick.gp === null || pick.gp === undefined){ toast("先选一个手柄键"); return; }
+    const base = draftGp.get(curKey) || (gpList && gpList.get(curKey)) || {};
+    const prevGp = (typeof base.gp === "number") ? base.gp : curKey;   // 表空时等价于「输出自己」
+    draftGp.set(curKey, { gp: pick.gp, times: base.times });
+    /* 两种改键方式（网页这边决定，固件只会照表执行）：
+       单向赋值 —— 只改这一个键，目标键保持原样；多键指向同一输出是允许的。
+       交换     —— 把目标键的那条也改成当前键原来的输出，两边互相调换。 */
+    if (gpMode === "swap" && pick.gp !== prevGp){
+      for (const s of SLOTS){
+        if (s.slot === curKey) continue;
+        const d = draftGp.get(s.slot) || (gpList && gpList.get(s.slot));
+        const got = d ? (d.gp | 0) : s.slot;
+        if (got === pick.gp){
+          draftGp.set(s.slot, { gp: prevGp, times: (d && d.times) || null });
+        }
+      }
+    }
+    dirtyGp = true;
+  } else if (kind === "mouse"){
+    if (!pick.op){ toast("先选一个鼠标操作"); return; }
+    const d = (pick.op.sx || pick.op.sy) ? pick.dist : 0;
+    draftMouse.set(curKey, {
+      but: pick.op.but, w: pick.op.w,
+      x: pick.op.sx * d, y: pick.op.sy * d
+    });
+    dirtyMouse = true;
+  } else if (kind === "media"){
+    if (typeof pick.op !== "number"){ toast("先选一个媒体键"); return; }
+    draftCs.set(curKey, pick.op);
+    dirtyCs = true;
+  }
+  $("btnApply").disabled = !(dirty || dirtyGp || dirtyMouse || dirtyCs || dirtySleep);
+  closeSheet();
+  renderPad();
+}
+
+/* ============================================================
+ * 7) 读写（V1：get_kb / set_kb）
+ * ============================================================ */
+
+/* 设备信息条：连上后把 get_info + 电量 + 各表条数摊在顶上，
+   不用点进每个栏目也知道手柄里到底存了什么。 */
+const fmtVer = v => (typeof v === "number") ? ("0x" + v.toString(16).toUpperCase()) : "—";
+function renderDevbar(){
+  if ($("devbar").hidden) return;
+  $("dMode").textContent = DEVINFO && DEVINFO.mode_name ? DEVINFO.mode_name : "—";
+  $("dVer").textContent  = fmtVer(DEVINFO && DEVINFO.version);
+  $("dBat").textContent  = (battery === null) ? "—" : (battery + "%");
+  $("dKb").textContent   = kbList    ? (kbList.length + " 条")     : "—";
+  $("dGp").textContent   = gpList    ? (gpList.size + " 条")       : "—";
+  $("dMs").textContent   = mouseList ? (mouseList.size + " 条")    : "—";
+  $("dCs").textContent   = csList    ? (csList.size + " 条")       : "—";
+}
+
+/* 电量走标准 GATT Battery Service（0x180F / 0x2A19），和 App 一样 */
+async function readBattery(){
+  try {
+    const s = await S.server.getPrimaryService(0x180f);
+    const c = await s.getCharacteristic(0x2a19);
+    const v = await c.readValue();
+    battery = v.getUint8(0);
+  } catch { battery = null; }
+  renderDevbar();
+}
+
+/* ---------------- 读表 ----------------
+   App 的节奏：一条 get_* 发出去 → 等回包 → 停一会儿 → 发下一条。
+   修复跨线程队列的唤醒 bug 之后，实测每条只要 20~270ms（17 条的 gp/kb 表
+   也才 0.27 秒），所以间隔收到 80ms、超时留 2.5 秒足够。
+   失败只重试当前这一栏，不整页重来。 */
+const READ_TIMEOUT = 2500;
+const READ_GAP = 80;
+async function readOnce(cmd, expect, timeout = READ_TIMEOUT){
+  let last;
+  for (let i = 0; i < 2; i++){
+    if (i) await sleep(260);
+    try { return await request(cmd, null, { key:"all", expect, timeout }); }
+    catch (e){ last = e; }
+  }
+  throw last;
+}
+
+async function loadKb(){
+  try {
+    const r = await readOnce("get_kb", "ret_kb");
+    kbList = Array.isArray(r.map) ? r.map : [];
+    for (const it of kbList){
+      const b = it.kb?.bytes ? Array.from(it.kb.bytes) : (Array.isArray(it.kb) ? it.kb : []);
+      // 第三个字节是修饰键位（fn）。出厂 key=8 就是 fn=4 只发 LAlt，
+      // 这里必须原样读进来，否则 saveKb 会把它当 0 写回去，直接抹掉修饰键。
+      draft.set(it.key, [b[0] ?? 0, b[1] ?? 0, (it.fn | 0)]);
+    }
+    dirty = false;
+    renderPad();
+    return kbList.length;
+  } catch (e){
+    throw new Error("键盘映射读取失败：" + e.message);
+  }
+}
+
+/* 手柄键互换映射。命令 = get_gp（pid=2001 机型走 "gp"，其它机型是 "xinput"） */
+async function loadGp(){
+  try {
+    const r = await readOnce("get_gp", "ret_gp");
+    const arr = Array.isArray(r.map) ? r.map : [];
+    gpList = new Map();
+    for (const it of arr){
+      if (typeof it.key !== "number") continue;
+      gpList.set(it.key, {
+        gp: it.gp | 0,
+        times: (typeof it.times === "number" ? it.times : null)
+      });
+    }
+    dirtyGp = false;
+    renderPad();
+    return gpList.size;
+  } catch (e){
+    throw new Error("手柄键映射读取失败：" + e.message);
+  }
+}
+
+/* 鼠标映射：ret_mouse 的 {key, but, w, x, y} */
+async function loadMouse(){
+  try {
+    const r = await readOnce("get_mouse", "ret_mouse");
+    const arr = Array.isArray(r.map) ? r.map : [];
+    mouseList = new Map();
+    for (const it of arr){
+      if (typeof it.key !== "number") continue;
+      mouseList.set(it.key, {
+        but: (it.but | 0), w: (it.w | 0), x: (it.x | 0), y: (it.y | 0)
+      });
+    }
+    renderPad();
+    return mouseList.size;
+  } catch (e){
+    throw new Error("鼠标映射读取失败：" + e.message);
+  }
+}
+
+/* 媒体键：ret_cs 的 {key, cs}，cs 是 HID Consumer Page usage */
+async function loadCs(){
+  try {
+    const r = await readOnce("get_cs", "ret_cs");
+    const arr = Array.isArray(r.map) ? r.map : [];
+    csList = new Map();
+    for (const it of arr){
+      if (typeof it.key !== "number") continue;
+      csList.set(it.key, it.cs | 0);
+    }
+    renderPad();
+    return csList.size;
+  } catch (e){
+    throw new Error("媒体键读取失败：" + e.message);
+  }
+}
+
+/* 其他：无操作关机时间 ret_sleep {discon, con} */
+async function loadSleep(){
+  try {
+    const r = await readOnce("get_sleep", "ret_sleep", 2000);
+    const it = (Array.isArray(r.map) && r.map[0]) || {};
+    sleepCfg = { discon: it.discon | 0, con: it.con | 0 };
+    return sleepCfg;
+  } catch (e){
+    throw new Error("关机时间读取失败：" + e.message);
+  }
+}
+
+/* 连上后按 App 的真实顺序读全：gp → kb → mouse → cs → sleep
+   （adb logcat 实测：App 进「设备配置」就是 gp 先发，然后 kb / mouse / cs / mt，
+     每条等响应再发下一条，间隔约 200ms；睡眠不在那次读里，单独补一条。） */
+async function loadAll(){
+  const msgs = [];
+  // 先清草稿，读完再由各 load* 填回来，顺序不能反
+  draft.clear(); draftGp.clear(); draftMouse.clear(); draftCs.clear();
+  dirty = dirtyGp = dirtyMouse = dirtyCs = dirtySleep = false;
+
+  try {
+    const n = await loadGp();
+    msgs.push(n ? ("手柄键 " + n + " 条") : "手柄键表为空（按出厂基线写入）");
+  } catch (e){ msgs.push(e.message); }
+  await sleep(READ_GAP);
+  try { msgs.push("键盘 " + (await loadKb()) + " 条"); }
+  catch (e){ msgs.push(e.message); }
+  await sleep(READ_GAP);
+  try { msgs.push("鼠标 " + (await loadMouse()) + " 条"); }
+  catch (e){ msgs.push(e.message); }
+  await sleep(READ_GAP);
+  try { msgs.push("媒体键 " + (await loadCs()) + " 条"); }
+  catch (e){ msgs.push(e.message); }
+  await sleep(READ_GAP);
+  try {
+    const s = await loadSleep();
+    msgs.push(`关机时间 ${s.discon}/${s.con}`);
+  }
+  catch (e){ msgs.push(e.message); }
+
+  $("btnApply").disabled = true;
+  renderSettings();
+  renderDevbar();
+  toast("已读取：" + msgs.join("，"), 4000);
+}
+
+/* 固件出厂时 gp 表是空的（get_gp 回 0x90），只有被写过一次才会存在。
+   所以空表 + 停在手柄栏时，「应用」也要能点 —— 点一下就把 17 条基线建起来。 */
+const gpEmpty = () => (col === "pad" && gpList !== null && gpList.size === 0);
+
+async function applyChanges(){
+  const jobs = [];
+  if (dirty && kbList && kbList.length) jobs.push(saveKb);
+  if (dirtyGp || gpEmpty()) jobs.push(saveGp);
+  if (dirtyMouse && mouseList && mouseList.size) jobs.push(saveMouse);
+  if (dirtyCs && csList && csList.size) jobs.push(saveCs);
+  if (dirtySleep) jobs.push(saveSleep);
+  if (!jobs.length){ toast("没有待写入的改动"); return; }
+
+  $("btnApply").disabled = true;
+  try {
+    // 每张表之间也留一口气：连着写五张表，固件写 flash 跟不上会丢最后几条
+    for (const job of jobs){ await job(); await sleep(READ_GAP); }
+    await sleep(500);
+    await loadAll();
+    toast("已写入并回读校验");
+  } catch (e){
+    toast("写入失败：" + e.message);
+    $("btnApply").disabled = false;
+  }
+}
+
+async function saveKb(){
+  // 全量写回：未改的槽位按原值，kb 第 3 字节按 App 规则填 0
+  const entries = kbList.map(it => {
+    const d = draft.get(it.key) || [0, 0, 0];
+    // 第 3 字节是固件自己维护的「槽位 rawValue」（key16→0x11、key19→0x17），
+    // 不是固定 0。写 0 会被固件忽略并保留原值，但既然读到了就原样带回去，
+    // 免得将来固件哪天改成"写入即生效"时把这一列清掉。
+    const raw = it.kb && it.kb.bytes ? it.kb.bytes : (Array.isArray(it.kb) ? it.kb : []);
+    const third = (raw[2] ?? 0) & 0xFF;
+    return { key: it.key | 0, fn: (d[2] || 0) & 0xFF, arr: [d[0] || 0, d[1] || 0, third] };
+  });
+  const body = () => MP.arr(entries.map(e => MP.map([
+    ["key", MP.u8(e.key)], ["fn", MP.u8(e.fn)], ["kb", MP.ext(0, e.arr)]
+  ])));
+  await request("set_kb", body, { expect:"ret_kb", timeout:6000 }).catch(() => null);
+}
+
+/* set_gp：实测字节（logcat 抓到官方 App 的真实 payload）
+     82 a3"cmd" a6"set_gp" a3"map" dc 00 11
+        82 a3"key" CC <key> a2"gp" CC <gp>     ← map(2)，key/gp 都是 0xCC(uint8)
+   App 不写 times；条目必须全量 17 条，只发一条固件直接忽略。
+   另外：出厂时这张表是空的（get_gp 回 map:[]），官方 App 点过一次「应用」之后才有数据，
+   所以读不到时用 SLOTS 生成 17 条「映射为自己」的基线再覆盖改动。 */
+async function saveGp(){
+  const base = new Map();
+  if (gpList && gpList.size){
+    for (const [k, v] of gpList) base.set(k, v.gp);
+  } else {
+    for (const s of SLOTS) base.set(s.slot, s.slot);
+  }
+  for (const [k, v] of draftGp) base.set(k, v.gp);
+  const entries = [...base.entries()];
+  const body = () => MP.arr(entries.map(([k, gp]) => MP.map([
+    ["key", MP.u8(k)], ["gp", MP.u8(gp)]
+  ])));
+  await request("set_gp", body, { expect:"ret_gp", timeout:1500 }).catch(() => null);
+}
+
+/* set_mouse：logcat 实抓的官方字节
+     82 a3"cmd" a9"set_mouse" a3"map" dc 00 11
+        85 a3"key" CC<u8> a3"but" CC<u8> a1"w" D1<i16> a1"x" D1<i16> a1"y" D1<i16>
+   必须全量 17 条。 */
+async function saveMouse(){
+  const base = new Map();
+  if (mouseList) for (const [k, v] of mouseList) base.set(k, { but: v.but, w: v.w, x: v.x, y: v.y });
+  for (const [k, v] of draftMouse) base.set(k, v);
+  const entries = [...base.entries()];
+  const body = () => MP.arr(entries.map(([k, m]) => MP.map([
+    ["key", MP.u8(k)], ["but", MP.u8(m.but)],
+    ["w", MP.i16(m.w)], ["x", MP.i16(m.x)], ["y", MP.i16(m.y)]
+  ])));
+  await request("set_mouse", body, { expect:"ret_mouse", timeout:6000 }).catch(() => null);
+}
+
+/* set_cs：logcat 实抓 —— 注意 key/cs 都是 uint16（0xCD），不是 set_kb 的 uint8
+     82 a3"cmd" a6"set_cs" a3"map" dc 00 11
+        82 a3"key" CD<u16> a2"cs" CD<u16>
+   必须全量 17 条。 */
+async function saveCs(){
+  const base = new Map();
+  if (csList) for (const [k, v] of csList) base.set(k, v);
+  for (const [k, v] of draftCs) base.set(k, v);
+  const entries = [...base.entries()];
+  const body = () => MP.arr(entries.map(([k, cs]) => MP.map([
+    ["key", MP.u16(k)], ["cs", MP.u16(cs)]
+  ])));
+  await request("set_cs", body, { expect:"ret_cs", timeout:6000 }).catch(() => null);
+}
+
+/* set_sleep：logcat 实抓 —— map 里就一条 {discon:u8, con:u8}，两个字段同时设
+     82 a3"cmd" a9"set_sleep" a3"map" 91 82 a6"discon" CC<u8> a3"con" CC<u8>
+   0 = 永不关机。 */
+async function saveSleep(){
+  const v = sleepCfg ? (sleepCfg.discon | 0) : 5;
+  const body = () => MP.arr([MP.map([
+    ["discon", MP.u8(v)], ["con", MP.u8(v)]
+  ])]);
+  await request("set_sleep", body, { expect:"ret_sleep", timeout:6000 }).catch(() => null);
+}
+
+/* ============================================================
+ * 8) 事件
+ * ============================================================ */
+function setColHint(){
+  const k = COLS[col].kind;
+  const padTip = (gpList !== null && gpList.size === 0)
+    ? "「手柄」栏 = 直接映射。固件里这张表现在是空的（从没存过映射），点「应用」即可建立 17 条基线。"
+    : "「手柄」栏 = 直接映射：点标签，选这个物理键要输出成哪个键（单向赋值，不会连累其它键）。";
+  $("hint").textContent =
+    k === "settings" ? "「其他」栏是手柄本身设置（无操作关机时间、初始化手柄），不是按键映射。"
+  : k === "pad"      ? padTip
+  : k === "mouse"    ? "「鼠标」栏：点标签把按键映射成鼠标动作，移动类还能调距离，按「应用」写入。"
+  : k === "media"    ? "「媒体键」栏：点标签映射媒体动作（音量、播放、亮度…），按「应用」写入。"
+  : "点按键标签改键，改完按「应用」写入。";
+}
+
+$("tabs").addEventListener("click", e => {
+  const b = e.target.closest("button[data-col]");
+  if (!b) return;
+  col = b.dataset.col;
+  [...$("tabs").children].forEach(x => x.classList.toggle("active", x === b));
+  setColHint();
+  renderPad();
+});
+
+$("btnConnect").addEventListener("click", () => { S.bridge ? bridgeConnect() : connect(); });
+$("qopts").addEventListener("click", e => {
+  const b = e.target.closest("button[data-dpad]");
+  if (b) applyDpad(b.dataset.dpad);
+});
+$("gpmode").addEventListener("click", e => {
+  const b = e.target.closest("button[data-gpmode]");
+  if (!b) return;
+  gpMode = b.dataset.gpmode;
+  try { localStorage.setItem("gpMode", gpMode); } catch {}
+  renderGpMode();
+  toast(gpMode === "swap" ? "改键方式：交换两键" : "改键方式：单向赋值");
+});
+$("btnDisconnect").addEventListener("click", async () => {
+  if (S.bridge){
+    await bridgeFetch("api/close", {}).catch(() => {});
+    markUnlinked("本地桥 · 已断开");   // 主动断开不触发自动重连
+    return;
+  }
+  try { if (S.dev?.gatt.connected) S.dev.gatt.disconnect(); } catch {}
+  setStatus("已断开", false);
+  $("btnConnect").disabled = false; $("btnDisconnect").disabled = true;
+});
+$("btnApply").addEventListener("click", applyChanges);
+$("btnReset").addEventListener("click", () => {
+  draft.clear(); draftGp.clear(); draftMouse.clear(); draftCs.clear();
+  dirty = false; dirtyGp = false; dirtyMouse = false; dirtyCs = false; dirtySleep = false;
+  $("btnApply").disabled = true;
+  loadSleep().then(renderSettings).catch(() => {});
+  renderPad(); toast("已恢复为读取到的值（未写入手柄）");
+});
+$("sleepRange").addEventListener("input", e => {
+  const v = +e.target.value;
+  $("sleepVal").textContent = v === 0 ? "永不" : (v + " 分钟");
+  sleepCfg = { discon: v, con: v };
+  dirtySleep = true;
+  $("btnApply").disabled = false;
+});
+$("btnRestore").addEventListener("click", async () => {
+  if (!confirm("恢复出厂会重置手柄上的全部键位映射（键盘 / 鼠标 / 媒体键 / 手柄键），无法撤销。\n\n确定继续？")) return;
+  toast("正在发送初始化指令…");
+  // set_restore 没有回包，别等满 3 秒
+  await request("set_restore", null, { timeout:900 }).catch(() => null);
+  toast("已发送，手柄会重启并回到出厂配置");
+});
+$("sheetClose").addEventListener("click", closeSheet);
+$("mask").addEventListener("click", closeSheet);
+$("sheetOk").addEventListener("click", commitSheet);
+
+/* 启动 */
+(async function init(){
+  // 允许 ?col=kb 直接打开某一栏（方便截图/分享）
+  const q = new URLSearchParams(location.search);
+  const want = q.get("col");
+  if (want && COLS[want]){
+    col = want;
+    [...$("tabs").children].forEach(x => x.classList.toggle("active", x.dataset.col === want));
+  }
+  try {
+    const loc = await fetch("data/gamepad_key_location.json").then(r => r.json());
+    KEYS = (loc["1000_2001"]?.front || []).map(it => ({ key: +it.key, x: it.x, y: it.y }));
+    /* 坐标表本身是对的：95(截图) 在左、17(Home) 在右，与手柄本体印刷「◄ CAPTURE / ◄ HOME」一致。
+       注意 App 主页面把那两个图标画反了（左房子右方框），别照它抄。 */
+  } catch { KEYS = []; }
+  setColHint();
+  renderPad();
+  // 如果页面是 bridge.py 托管的，直接接管已连好的手柄（Web Bluetooth 做不到这点）
+  await probeBridge();
+  // ?open=<按键编号> 自动打开某个键的改键面板（便于截图/自测）
+  const op = +q.get("open");
+  if (op) setTimeout(() => openSheet(op), 350);
+})();
+</script>
+</body>
+</html>

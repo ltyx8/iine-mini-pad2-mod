@@ -1,0 +1,54 @@
+# ---------------- 构建产物 ----------------
+analysis/build/
+analysis/dist/
+analysis/__pycache__/
+**/__pycache__/
+*.pyc
+*.spec.bak
+
+# ---------------- Python 虚拟环境 ----------------
+analysis/.venv/
+.venv/
+
+# ---------------- APK 与解包产物 ----------------
+# 都可以用 apktool 从 良值_1.9.9.apk 重新生成，不进仓库
+良值_1.9.9.apk
+decoded/
+tools/apktool.jar
+
+# ---------------- 运行时状态 / 调试输出 ----------------
+analysis/.bridge_addr
+analysis/.edge_cdp3/
+.edge_cdp3/
+run.log
+run_*.log
+*.log
+
+# ---------------- 临时诊断文件 ----------------
+analysis/.btcut.txt
+analysis/.btdev*.txt
+analysis/.cmdline.txt
+
+# ---------------- Agent 工作区状态 ----------------
+.workbuddy/
+
+# 由 git ls-files 生成的目录树快照
+目录树.txt
+
+# ---------------- 按要求不入库（文件保留在工作区） ----------------
+# 早期 PC 客户端方案页（已被 keymap.html 取代）
+analysis/web/index.html
+# 逆向过程文档
+analysis/良值IINE_APK逆向与Windows客户端方案.md
+analysis/良值玩家空间PC客户端_逆向报告.md
+analysis/网页端方案选型.md
+# 实测截图
+analysis/gp17.png
+analysis/verify.png
+# App 对照截图与抓取的 UI XML / logcat（研究证据，仅保留在工作区）
+analysis/app_shots/
+# App 退出残留进程修复实验
+analysis/fix_iine_exit.py
+analysis/test_iine_exit.py
+# batch 脚本（构建 / 修复 / 启动）
+*.cmd

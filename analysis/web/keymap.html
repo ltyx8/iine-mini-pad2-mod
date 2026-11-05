@@ -230,12 +230,18 @@
     <div class="setcard">
       <h3>手柄设置</h3>
       <div class="setrow">
-        <span>无操作关机时间</span>
-        <input type="range" id="sleepRange" min="0" max="240" step="1" value="5">
-        <b id="sleepVal">5 分钟</b>
+        <span>已连接 · 无操作关机</span>
+        <input type="range" id="sleepCon" min="0" max="240" step="1" value="3">
+        <b id="sleepConVal">3 分钟</b>
+      </div>
+      <div class="setrow" style="margin-top:8px">
+        <span>未连接 · 自动关机</span>
+        <input type="range" id="sleepDis" min="0" max="240" step="1" value="5">
+        <b id="sleepDisVal">5 分钟</b>
       </div>
       <div class="setrow" style="margin-top:10px;color:#8b98a8;font-size:12px">
-        手柄空闲这么久没有任何输入就自动断电，最左（0）＝永不关机。断连后同样计时。
+        两个值是分开的：<b>已连接</b>那条管你按键之后停手多久断电（出厂 3 分钟），
+        <b>未连接</b>那条管关掉蓝牙 / 离开电脑后多久断电（出厂 5 分钟）。最左（0）＝永不关机。
       </div>
       <button id="btnRestore" class="danger">初始化手柄</button>
       <p class="note" style="margin-top:10px">恢复出厂会把键盘 / 鼠标 / 媒体键 / 手柄键四张表全部重置。</p>
@@ -1079,11 +1085,17 @@ function renderPad(){
   svg.innerHTML = `<g stroke="#cfd6df" stroke-width="1.6" opacity="0.5">${path}</g>`;
 }
 
-/* 「其他」栏：无操作关机时间 + 初始化手柄（ret_sleep 的 discon / con） */
+/* 「其他」栏：无操作关机时间 + 初始化手柄（ret_sleep 的 discon / con）
+   注意这两个是**分开的**：con = 已连接时的空闲断电，discon = 未连接后的断电。
+   以前界面只显示 discon 且写回时把两个都写成同一个值，于是出现
+   「界面写 5 分钟、实际 3 分钟就关机」——手柄出厂就是 con=3 / discon=5。 */
 function renderSettings(){
-  const v = sleepCfg ? (sleepCfg.discon | 0) : 5;
-  $("sleepRange").value = v;
-  $("sleepVal").textContent = v === 0 ? "永不" : (v + " 分钟");
+  const c = sleepCfg ? (sleepCfg.con | 0) : 3;
+  const d = sleepCfg ? (sleepCfg.discon | 0) : 5;
+  $("sleepCon").value = c;
+  $("sleepConVal").textContent = c === 0 ? "永不" : (c + " 分钟");
+  $("sleepDis").value = d;
+  $("sleepDisVal").textContent = d === 0 ? "永不" : (d + " 分钟");
 }
 
 /* ============================================================
@@ -1642,15 +1654,17 @@ async function saveCs(){
 
 /* set_sleep：logcat 实抓 —— map 里就一条 {discon:u8, con:u8}，两个字段同时设
      82 a3"cmd" a9"set_sleep" a3"map" 91 82 a6"discon" CC<u8> a3"con" CC<u8>
-   0 = 永不关机。 */
+   0 = 永不关机。两个值各管一段：con 是已连接时的空闲断电，discon 是未连接后的断电，
+   出厂是 con=3 / discon=5，写回时必须各自带回，不能都填同一个数。 */
 async function saveSleep(){
-  const v = sleepCfg ? (sleepCfg.discon | 0) : 5;
+  const dis = sleepCfg ? (sleepCfg.discon | 0) : 5;
+  const con = sleepCfg ? (sleepCfg.con | 0) : 3;
   const body = () => MP.arr([MP.map([
-    ["discon", MP.u8(v)], ["con", MP.u8(v)]
+    ["discon", MP.u8(dis)], ["con", MP.u8(con)]
   ])]);
   const { r, ms } = await pushSet("set_sleep", body, "get_sleep", "ret_sleep", x => {
     const it = (Array.isArray(x.map) && x.map[0]) || {};
-    return (it.discon | 0) === v && (it.con | 0) === v;
+    return (it.discon | 0) === dis && (it.con | 0) === con;
   });
   applySleep(r);
   return ms;
@@ -1712,13 +1726,19 @@ $("btnReset").addEventListener("click", () => {
   loadSleep().then(renderSettings).catch(() => {});
   renderPad(); toast("已恢复为读取到的值（未写入手柄）");
 });
-$("sleepRange").addEventListener("input", e => {
-  const v = +e.target.value;
-  $("sleepVal").textContent = v === 0 ? "永不" : (v + " 分钟");
-  sleepCfg = { discon: v, con: v };
-  dirtySleep = true;
-  $("btnApply").disabled = false;
-});
+function bindSleep(id, valId, field){
+  $(id).addEventListener("input", e => {
+    const v = +e.target.value;
+    $(valId).textContent = v === 0 ? "永不" : (v + " 分钟");
+    const base = sleepCfg || { discon: 5, con: 3 };
+    sleepCfg = { discon: base.discon | 0, con: base.con | 0 };
+    sleepCfg[field] = v;          // 只改这一条，另一条原样保留
+    dirtySleep = true;
+    $("btnApply").disabled = false;
+  });
+}
+bindSleep("sleepCon", "sleepConVal", "con");
+bindSleep("sleepDis", "sleepDisVal", "discon");
 $("btnRestore").addEventListener("click", async () => {
   if (!confirm("恢复出厂会重置手柄上的全部键位映射（键盘 / 鼠标 / 媒体键 / 手柄键），无法撤销。\n\n确定继续？")) return;
   toast("正在发送初始化指令…");

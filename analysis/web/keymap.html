@@ -154,6 +154,19 @@
   .setrow{display:flex;align-items:center;gap:12px;color:#c9cfd8;font-size:13px}
   .setrow input[type=range]{flex:1;accent-color:var(--accent)}
   .setrow b{color:var(--fg);font-weight:600;min-width:56px;text-align:right}
+  /* 无操作关机：− 数值 ＋ 步进器（数字可直接输入，超出范围自动夹紧） */
+  .step{display:flex;align-items:center;gap:6px;margin-left:auto}
+  .step button{width:30px;height:30px;margin:0;padding:0;line-height:1;font-size:17px;
+    background:#232830;border:1px solid var(--line);color:var(--fg);border-radius:9px;cursor:pointer}
+  .step button:hover{border-color:var(--accent)}
+  .step button:active{background:#2c333d}
+  .step input{width:64px;height:30px;text-align:center;font-size:14px;font-weight:600;
+    background:#1b2027;border:1px solid var(--line);border-radius:9px;color:var(--fg);
+    font-family:inherit;-moz-appearance:textfield}
+  .step input::-webkit-outer-spin-button,
+  .step input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+  .step input:focus{outline:none;border-color:var(--accent)}
+  .step .unit{font-size:12px;color:#8b98a8;min-width:26px}
   .setcard button{margin-top:16px;background:#232830;border:1px solid var(--line);color:var(--fg);
     border-radius:10px;padding:9px 16px;font-size:13px;cursor:pointer}
   .setcard button:hover{border-color:#3a4250}
@@ -230,18 +243,18 @@
     <div class="setcard">
       <h3>手柄设置</h3>
       <div class="setrow">
-        <span>已连接 · 无操作关机</span>
-        <input type="range" id="sleepCon" min="0" max="240" step="1" value="3">
-        <b id="sleepConVal">3 分钟</b>
-      </div>
-      <div class="setrow" style="margin-top:8px">
-        <span>未连接 · 自动关机</span>
-        <input type="range" id="sleepDis" min="0" max="240" step="1" value="5">
-        <b id="sleepDisVal">5 分钟</b>
+        <span>无操作关机</span>
+        <div class="step">
+          <button type="button" id="sleepMinus" aria-label="减少一分钟">−</button>
+          <input type="number" id="sleepNum" min="0" max="240" step="1" inputmode="numeric" value="3">
+          <span class="unit">分钟</span>
+          <button type="button" id="sleepPlus" aria-label="增加一分钟">＋</button>
+        </div>
       </div>
       <div class="setrow" style="margin-top:10px;color:#8b98a8;font-size:12px">
-        两个值是分开的：<b>已连接</b>那条管你按键之后停手多久断电（出厂 3 分钟），
-        <b>未连接</b>那条管关掉蓝牙 / 离开电脑后多久断电（出厂 5 分钟）。最左（0）＝永不关机。
+        按键之后停手超过这个时间就自动断电。<b>0 = 永不关机</b>，最大 240。
+        可以直接输入数字，也可以按住 − / ＋ 连续加减。
+        断连后那个 5 分钟是固件写死的，改不了，所以这里不再显示。
       </div>
       <button id="btnRestore" class="danger">初始化手柄</button>
       <p class="note" style="margin-top:10px">恢复出厂会把键盘 / 鼠标 / 媒体键 / 手柄键四张表全部重置。</p>
@@ -1086,16 +1099,11 @@ function renderPad(){
 }
 
 /* 「其他」栏：无操作关机时间 + 初始化手柄（ret_sleep 的 discon / con）
-   注意这两个是**分开的**：con = 已连接时的空闲断电，discon = 未连接后的断电。
-   以前界面只显示 discon 且写回时把两个都写成同一个值，于是出现
-   「界面写 5 分钟、实际 3 分钟就关机」——手柄出厂就是 con=3 / discon=5。 */
+   con = 已连接时的空闲断电（可改），discon = 未连接后的断电（固件写死 5 分钟，
+   实测改不动，界面不显示，但写回时仍要原样带回，否则会被填成别的值）。 */
 function renderSettings(){
   const c = sleepCfg ? (sleepCfg.con | 0) : 3;
-  const d = sleepCfg ? (sleepCfg.discon | 0) : 5;
-  $("sleepCon").value = c;
-  $("sleepConVal").textContent = c === 0 ? "永不" : (c + " 分钟");
-  $("sleepDis").value = d;
-  $("sleepDisVal").textContent = d === 0 ? "永不" : (d + " 分钟");
+  $("sleepNum").value = c;
 }
 
 /* ============================================================
@@ -1654,8 +1662,8 @@ async function saveCs(){
 
 /* set_sleep：logcat 实抓 —— map 里就一条 {discon:u8, con:u8}，两个字段同时设
      82 a3"cmd" a9"set_sleep" a3"map" 91 82 a6"discon" CC<u8> a3"con" CC<u8>
-   0 = 永不关机。两个值各管一段：con 是已连接时的空闲断电，discon 是未连接后的断电，
-   出厂是 con=3 / discon=5，写回时必须各自带回，不能都填同一个数。 */
+   0 = 永不关机。con = 已连接时的空闲断电（可改），discon = 未连接后的断电
+   （固件写死 5 分钟，改不动）。所以只能改 con，discon 按读到什么写回什么。 */
 async function saveSleep(){
   const dis = sleepCfg ? (sleepCfg.discon | 0) : 5;
   const con = sleepCfg ? (sleepCfg.con | 0) : 3;
@@ -1726,19 +1734,53 @@ $("btnReset").addEventListener("click", () => {
   loadSleep().then(renderSettings).catch(() => {});
   renderPad(); toast("已恢复为读取到的值（未写入手柄）");
 });
-function bindSleep(id, valId, field){
-  $(id).addEventListener("input", e => {
-    const v = +e.target.value;
-    $(valId).textContent = v === 0 ? "永不" : (v + " 分钟");
-    const base = sleepCfg || { discon: 5, con: 3 };
-    sleepCfg = { discon: base.discon | 0, con: base.con | 0 };
-    sleepCfg[field] = v;          // 只改这一条，另一条原样保留
-    dirtySleep = true;
-    $("btnApply").disabled = false;
-  });
+/* 「无操作关机」步进器：点一下 ±1，按住 450ms 后连续加减并逐档加速
+   （前 4 次 ×1、接着 ×5、之后 ×10）；数字框可以直接输入，超出 0~240 立刻夹紧。
+   discon 那条固件写死，这里只动 con，另一条原样带回。 */
+const SLEEP_MAX = 240;
+function sleepSet(v, mark = true){
+  let n = Math.round(Number(v));
+  if (!Number.isFinite(n)) n = 0;
+  n = Math.max(0, Math.min(SLEEP_MAX, n));
+  const base = sleepCfg || { discon: 5, con: 3 };
+  sleepCfg = { discon: base.discon | 0, con: n };
+  $("sleepNum").value = n;
+  if (mark){ dirtySleep = true; $("btnApply").disabled = false; }
+  return n;
 }
-bindSleep("sleepCon", "sleepConVal", "con");
-bindSleep("sleepDis", "sleepDisVal", "discon");
+function bindStep(btnId, dir){
+  const btn = $(btnId);
+  let hold = null, tick = 0;
+  const bump = () => {
+    const cur = sleepCfg ? (sleepCfg.con | 0) : 3;
+    sleepSet(cur + dir * (tick < 4 ? 1 : tick < 10 ? 5 : 10));
+  };
+  const stop = () => {
+    clearTimeout(hold);
+    clearInterval(hold);
+    hold = null;
+    tick = 0;
+  };
+  btn.addEventListener("pointerdown", e => {
+    e.preventDefault();
+    stop();
+    bump();                                  // 先走一格，按住不放才连续
+    hold = setTimeout(() => {
+      hold = setInterval(() => { tick++; bump(); }, 110);
+    }, 450);
+  });
+  ["pointerup", "pointerleave", "pointercancel", "blur"].forEach(ev => btn.addEventListener(ev, stop));
+}
+bindStep("sleepMinus", -1);
+bindStep("sleepPlus", 1);
+$("sleepNum").addEventListener("input", e => {
+  const raw = e.target.value;
+  if (raw === "" || raw === "-") return;     // 打字中途别打断
+  sleepSet(raw);
+});
+$("sleepNum").addEventListener("change", e => {
+  sleepSet(e.target.value === "" ? (sleepCfg ? sleepCfg.con : 3) : e.target.value);
+});
 $("btnRestore").addEventListener("click", async () => {
   if (!confirm("恢复出厂会重置手柄上的全部键位映射（键盘 / 鼠标 / 媒体键 / 手柄键），无法撤销。\n\n确定继续？")) return;
   toast("正在发送初始化指令…");

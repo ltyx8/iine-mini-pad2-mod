@@ -386,7 +386,10 @@ function request(cmd, bodyBuilder, opts = {}){
   const payload = MP.map(pairs);
 
   // 本地桥模式：Web Bluetooth 扫不到系统已连的设备，改走 HTTP 由 Python 侧收发
-  if (S.bridge) return bridgeRequest(payload, expect, timeout);
+  if (S.bridge) return bridgeRequest(payload, expect, timeout, opts.nowait);
+
+  // 直连模式：set_* 不回包，发完就 resolve，别等超时
+  if (opts.nowait) return send(payload).then(() => ({}));
 
   return new Promise((res, rej) => {
     const t = setTimeout(() => { S.pending.delete(expect); rej(new Error(expect + " 超时")); }, timeout);
@@ -415,13 +418,16 @@ async function bridgeFetch(path, body){
   }
   return r.json();
 }
-async function bridgeRequest(payload, expect, timeout){
-  const j = await bridgeFetch("api/send", { hex: toHex(payload), timeout: timeout / 1000, cmd: expect });
+async function bridgeRequest(payload, expect, timeout, nowait){
+  const j = await bridgeFetch("api/send", nowait
+    ? { hex: toHex(payload), timeout: timeout / 1000, nowait: true }
+    : { hex: toHex(payload), timeout: timeout / 1000, cmd: expect });
   if (j.disconnected){            // 链路断了，不是命令超时
     markUnlinked("链路已断开，正在自动重连…");
     throw new Error("链路已断开");
   }
   if (j.error) throw new Error(j.error);
+  if (nowait) return {};            // 不回包的命令：发出去就算完，落盘靠回读确认
   if (j.timeout) throw new Error(expect + " 超时");
   const obj = new Decoder(hexToBytes(j.payload)).read();
   if (!obj || obj.cmd !== expect) throw new Error("响应不匹配：" + (obj && obj.cmd));
@@ -1346,88 +1352,102 @@ async function readOnce(cmd, expect, timeout = READ_TIMEOUT){
   throw last;
 }
 
+/* 把 ret_kb 的结果装进 kbList / draft —— 读表和「写完回读校验」共用同一套解析 */
+function applyKb(r){
+  kbList = Array.isArray(r.map) ? r.map : [];
+  for (const it of kbList){
+    const b = it.kb?.bytes ? Array.from(it.kb.bytes) : (Array.isArray(it.kb) ? it.kb : []);
+    // 第三个字节是修饰键位（fn）。出厂 key=8 就是 fn=4 只发 LAlt，
+    // 这里必须原样读进来，否则 saveKb 会把它当 0 写回去，直接抹掉修饰键。
+    draft.set(it.key, [b[0] ?? 0, b[1] ?? 0, (it.fn | 0)]);
+  }
+  dirty = false;
+  renderPad();
+  return kbList.length;
+}
 async function loadKb(){
   try {
-    const r = await readOnce("get_kb", "ret_kb");
-    kbList = Array.isArray(r.map) ? r.map : [];
-    for (const it of kbList){
-      const b = it.kb?.bytes ? Array.from(it.kb.bytes) : (Array.isArray(it.kb) ? it.kb : []);
-      // 第三个字节是修饰键位（fn）。出厂 key=8 就是 fn=4 只发 LAlt，
-      // 这里必须原样读进来，否则 saveKb 会把它当 0 写回去，直接抹掉修饰键。
-      draft.set(it.key, [b[0] ?? 0, b[1] ?? 0, (it.fn | 0)]);
-    }
-    dirty = false;
-    renderPad();
-    return kbList.length;
+    return applyKb(await readOnce("get_kb", "ret_kb"));
   } catch (e){
     throw new Error("键盘映射读取失败：" + e.message);
   }
 }
 
 /* 手柄键互换映射。命令 = get_gp（pid=2001 机型走 "gp"，其它机型是 "xinput"） */
+function applyGp(r){
+  const arr = Array.isArray(r.map) ? r.map : [];
+  gpList = new Map();
+  for (const it of arr){
+    if (typeof it.key !== "number") continue;
+    gpList.set(it.key, {
+      gp: it.gp | 0,
+      times: (typeof it.times === "number" ? it.times : null)
+    });
+  }
+  dirtyGp = false;
+  renderPad();
+  return gpList.size;
+}
 async function loadGp(){
   try {
-    const r = await readOnce("get_gp", "ret_gp");
-    const arr = Array.isArray(r.map) ? r.map : [];
-    gpList = new Map();
-    for (const it of arr){
-      if (typeof it.key !== "number") continue;
-      gpList.set(it.key, {
-        gp: it.gp | 0,
-        times: (typeof it.times === "number" ? it.times : null)
-      });
-    }
-    dirtyGp = false;
-    renderPad();
-    return gpList.size;
+    return applyGp(await readOnce("get_gp", "ret_gp"));
   } catch (e){
     throw new Error("手柄键映射读取失败：" + e.message);
   }
 }
 
 /* 鼠标映射：ret_mouse 的 {key, but, w, x, y} */
+function applyMouse(r){
+  const arr = Array.isArray(r.map) ? r.map : [];
+  mouseList = new Map();
+  for (const it of arr){
+    if (typeof it.key !== "number") continue;
+    mouseList.set(it.key, {
+      but: (it.but | 0), w: (it.w | 0), x: (it.x | 0), y: (it.y | 0)
+    });
+  }
+  dirtyMouse = false;
+  renderPad();
+  return mouseList.size;
+}
 async function loadMouse(){
   try {
-    const r = await readOnce("get_mouse", "ret_mouse");
-    const arr = Array.isArray(r.map) ? r.map : [];
-    mouseList = new Map();
-    for (const it of arr){
-      if (typeof it.key !== "number") continue;
-      mouseList.set(it.key, {
-        but: (it.but | 0), w: (it.w | 0), x: (it.x | 0), y: (it.y | 0)
-      });
-    }
-    renderPad();
-    return mouseList.size;
+    return applyMouse(await readOnce("get_mouse", "ret_mouse"));
   } catch (e){
     throw new Error("鼠标映射读取失败：" + e.message);
   }
 }
 
 /* 媒体键：ret_cs 的 {key, cs}，cs 是 HID Consumer Page usage */
+function applyCs(r){
+  const arr = Array.isArray(r.map) ? r.map : [];
+  csList = new Map();
+  for (const it of arr){
+    if (typeof it.key !== "number") continue;
+    csList.set(it.key, it.cs | 0);
+  }
+  dirtyCs = false;
+  renderPad();
+  return csList.size;
+}
 async function loadCs(){
   try {
-    const r = await readOnce("get_cs", "ret_cs");
-    const arr = Array.isArray(r.map) ? r.map : [];
-    csList = new Map();
-    for (const it of arr){
-      if (typeof it.key !== "number") continue;
-      csList.set(it.key, it.cs | 0);
-    }
-    renderPad();
-    return csList.size;
+    return applyCs(await readOnce("get_cs", "ret_cs"));
   } catch (e){
     throw new Error("媒体键读取失败：" + e.message);
   }
 }
 
 /* 其他：无操作关机时间 ret_sleep {discon, con} */
+function applySleep(r){
+  const it = (Array.isArray(r.map) && r.map[0]) || {};
+  sleepCfg = { discon: it.discon | 0, con: it.con | 0 };
+  dirtySleep = false;
+  return sleepCfg;
+}
 async function loadSleep(){
   try {
-    const r = await readOnce("get_sleep", "ret_sleep", 2000);
-    const it = (Array.isArray(r.map) && r.map[0]) || {};
-    sleepCfg = { discon: it.discon | 0, con: it.con | 0 };
-    return sleepCfg;
+    return applySleep(await readOnce("get_sleep", "ret_sleep", 2000));
   } catch (e){
     throw new Error("关机时间读取失败：" + e.message);
   }
@@ -1472,24 +1492,48 @@ async function loadAll(){
    所以空表 + 停在手柄栏时，「应用」也要能点 —— 点一下就把 17 条基线建起来。 */
 const gpEmpty = () => (col === "pad" && gpList !== null && gpList.size === 0);
 
+/* ---------------- 写表 ----------------
+   set_* 系列固件**根本不回包**（V1 协议实测）。以前每条都设 6 秒超时去等
+   ret_*，实际是白等到超时：改一张表 6 秒，四张就半分钟，末尾还要全量重读一遍。
+   现在改成：发出去立刻返回（nowait），再用回读确认是否真的落盘。
+   实测「发送 → 回读一致」约 0.4~1.5 秒，正常情况第一次回读就命中。 */
+async function pushSet(cmd, body, getCmd, getExpect, same){
+  const t0 = performance.now();
+  await request(cmd, body, { nowait: true, timeout: 3000 });
+  let last = null;
+  for (let i = 0; i < 8; i++){
+    await sleep(120);
+    let r;
+    try { r = await request(getCmd, null, { key: "all", expect: getExpect, timeout: 2000 }); }
+    catch (e){ last = e; continue; }
+    if (same(r)) return { r, ms: Math.round(performance.now() - t0) };
+    last = new Error("回读值与写入值不一致");
+  }
+  throw new Error(cmd + " 写入未生效（" + (last ? last.message : "超时") + "）");
+}
+
 async function applyChanges(){
   const jobs = [];
-  if (dirty && kbList && kbList.length) jobs.push(saveKb);
-  if (dirtyGp || gpEmpty()) jobs.push(saveGp);
-  if (dirtyMouse && mouseList && mouseList.size) jobs.push(saveMouse);
-  if (dirtyCs && csList && csList.size) jobs.push(saveCs);
-  if (dirtySleep) jobs.push(saveSleep);
+  if (dirty && kbList && kbList.length) jobs.push(["键盘", saveKb]);
+  if (dirtyGp || gpEmpty()) jobs.push(["手柄", saveGp]);
+  if (dirtyMouse && mouseList && mouseList.size) jobs.push(["鼠标", saveMouse]);
+  if (dirtyCs && csList && csList.size) jobs.push(["媒体键", saveCs]);
+  if (dirtySleep) jobs.push(["关机时间", saveSleep]);
   if (!jobs.length){ toast("没有待写入的改动"); return; }
 
   $("btnApply").disabled = true;
   try {
-    // 每张表之间也留一口气：连着写五张表，固件写 flash 跟不上会丢最后几条
-    for (const job of jobs){ await job(); await sleep(READ_GAP); }
-    await sleep(500);
-    await loadAll();
-    toast("已写入并回读校验");
+    const notes = [];
+    for (const [name, job] of jobs){
+      const ms = await job();
+      notes.push(name + " " + ms + "ms");
+      // 每张表之间留一口气：连着写几张表，固件写 flash 跟不上会丢最后几条
+      await sleep(60);
+    }
+    toast("已写入并回读校验：" + notes.join("，"), 3500);
+    $("btnApply").disabled = true;      // 各表 dirty 已在回读后清掉
   } catch (e){
-    toast("写入失败：" + e.message);
+    toast("写入失败：" + e.message, 5000);
     $("btnApply").disabled = false;
   }
 }
@@ -1508,7 +1552,17 @@ async function saveKb(){
   const body = () => MP.arr(entries.map(e => MP.map([
     ["key", MP.u8(e.key)], ["fn", MP.u8(e.fn)], ["kb", MP.ext(0, e.arr)]
   ])));
-  await request("set_kb", body, { expect:"ret_kb", timeout:6000 }).catch(() => null);
+  // 只比 key / fn / 键码1 / 键码2：第 3 字节由固件维护，不参与比对
+  const want = entries.map(e => `${e.key}:${e.fn}:${e.arr[0]}:${e.arr[1]}`).sort().join(",");
+  const { r, ms } = await pushSet("set_kb", body, "get_kb", "ret_kb", x => {
+    const got = (Array.isArray(x.map) ? x.map : []).map(it => {
+      const b = it.kb?.bytes ? Array.from(it.kb.bytes) : (Array.isArray(it.kb) ? it.kb : []);
+      return `${it.key | 0}:${it.fn | 0}:${b[0] ?? 0}:${b[1] ?? 0}`;
+    }).sort().join(",");
+    return got === want;
+  });
+  applyKb(r);
+  return ms;
 }
 
 /* set_gp：实测字节（logcat 抓到官方 App 的真实 payload）
@@ -1529,7 +1583,14 @@ async function saveGp(){
   const body = () => MP.arr(entries.map(([k, gp]) => MP.map([
     ["key", MP.u8(k)], ["gp", MP.u8(gp)]
   ])));
-  await request("set_gp", body, { expect:"ret_gp", timeout:1500 }).catch(() => null);
+  const want = entries.map(([k, gp]) => `${k | 0}:${gp | 0}`).sort().join(",");
+  const { r, ms } = await pushSet("set_gp", body, "get_gp", "ret_gp", x => {
+    const got = (Array.isArray(x.map) ? x.map : [])
+      .map(it => `${it.key | 0}:${it.gp | 0}`).sort().join(",");
+    return got === want;
+  });
+  applyGp(r);
+  return ms;
 }
 
 /* set_mouse：logcat 实抓的官方字节
@@ -1545,7 +1606,16 @@ async function saveMouse(){
     ["key", MP.u8(k)], ["but", MP.u8(m.but)],
     ["w", MP.i16(m.w)], ["x", MP.i16(m.x)], ["y", MP.i16(m.y)]
   ])));
-  await request("set_mouse", body, { expect:"ret_mouse", timeout:6000 }).catch(() => null);
+  const want = entries.map(([k, m]) => `${k | 0}:${m.but | 0}:${m.w | 0}:${m.x | 0}:${m.y | 0}`)
+    .sort().join(",");
+  const { r, ms } = await pushSet("set_mouse", body, "get_mouse", "ret_mouse", x => {
+    const got = (Array.isArray(x.map) ? x.map : [])
+      .map(it => `${it.key | 0}:${it.but | 0}:${it.w | 0}:${it.x | 0}:${it.y | 0}`)
+      .sort().join(",");
+    return got === want;
+  });
+  applyMouse(r);
+  return ms;
 }
 
 /* set_cs：logcat 实抓 —— 注意 key/cs 都是 uint16（0xCD），不是 set_kb 的 uint8
@@ -1560,7 +1630,14 @@ async function saveCs(){
   const body = () => MP.arr(entries.map(([k, cs]) => MP.map([
     ["key", MP.u16(k)], ["cs", MP.u16(cs)]
   ])));
-  await request("set_cs", body, { expect:"ret_cs", timeout:6000 }).catch(() => null);
+  const want = entries.map(([k, cs]) => `${k | 0}:${cs | 0}`).sort().join(",");
+  const { r, ms } = await pushSet("set_cs", body, "get_cs", "ret_cs", x => {
+    const got = (Array.isArray(x.map) ? x.map : [])
+      .map(it => `${it.key | 0}:${it.cs | 0}`).sort().join(",");
+    return got === want;
+  });
+  applyCs(r);
+  return ms;
 }
 
 /* set_sleep：logcat 实抓 —— map 里就一条 {discon:u8, con:u8}，两个字段同时设
@@ -1571,7 +1648,12 @@ async function saveSleep(){
   const body = () => MP.arr([MP.map([
     ["discon", MP.u8(v)], ["con", MP.u8(v)]
   ])]);
-  await request("set_sleep", body, { expect:"ret_sleep", timeout:6000 }).catch(() => null);
+  const { r, ms } = await pushSet("set_sleep", body, "get_sleep", "ret_sleep", x => {
+    const it = (Array.isArray(x.map) && x.map[0]) || {};
+    return (it.discon | 0) === v && (it.con | 0) === v;
+  });
+  applySleep(r);
+  return ms;
 }
 
 /* ============================================================
@@ -1640,8 +1722,8 @@ $("sleepRange").addEventListener("input", e => {
 $("btnRestore").addEventListener("click", async () => {
   if (!confirm("恢复出厂会重置手柄上的全部键位映射（键盘 / 鼠标 / 媒体键 / 手柄键），无法撤销。\n\n确定继续？")) return;
   toast("正在发送初始化指令…");
-  // set_restore 没有回包，别等满 3 秒
-  await request("set_restore", null, { timeout:900 }).catch(() => null);
+  // set_restore 同样不回包：发完就走，别等
+  await request("set_restore", null, { nowait: true, timeout:3000 }).catch(() => null);
   toast("已发送，手柄会重启并回到出厂配置");
 });
 $("sheetClose").addEventListener("click", closeSheet);

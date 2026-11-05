@@ -628,6 +628,29 @@ class Device:
                 if r.status != 0:
                     raise RuntimeError(f"写帧失败 status={r.status}")
 
+    async def write_only(self, payload: bytes):
+        """只发不等回包 —— 给 set_* 系列用。
+
+        set_kb / set_gp / set_mouse / set_cs / set_sleep **固件一概不回包**
+        （V1 协议实测，见 analysis/V1协议实测与改键说明.md）。以前网页端给它们
+        设 6 秒超时等 ret_*，实际是白等到超时：改一张表 6 秒，改四张就半分钟。
+        这里发完立刻返回，落盘情况由调用方回读确认。
+        """
+        if not self.connected:
+            raise LinkLost(self.last_error or "未连接")
+        async with self.lock:
+            self._drain()
+            try:
+                await self._send(payload)
+            except Exception as e:
+                if _is_link_lost(e):
+                    self._mark_lost(f"写命令时链路已断开（{type(e).__name__}）")
+                    raise LinkLost(self.last_error) from e
+                raise
+            # WriteWithoutResponse 只保证「已交给控制器」，末帧还在空中；
+            # 留一点空再让客户端回读，免得读到的还是旧值。
+            await asyncio.sleep(0.05)
+
     def _alive(self) -> bool:
         """链路是否真的还在：读 BluetoothLEDevice.connection_status（1=已连接）。
 
@@ -766,6 +789,17 @@ class Handler(SimpleHTTPRequestHandler):
                     payload = bytes.fromhex(hexstr.replace(" ", ""))
                 except ValueError:
                     self._json({"error": "hex 格式不对"}, 400)
+                    return
+                # nowait：set_* 这类不回包的命令，发完就返回，别等整套超时
+                if q.get("nowait"):
+                    try:
+                        run_ble(DEVICE.write_only(payload), timeout + 4)
+                    except LinkLost as e:
+                        _start_recover()
+                        self._json({"error": str(e), "disconnected": True,
+                                    "connected": False})
+                        return
+                    self._json({"ok": True, "nowait": True})
                     return
                 try:
                     raw = run_ble(DEVICE.query(payload, timeout, q.get("cmd") or None), timeout + 4)

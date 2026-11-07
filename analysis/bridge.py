@@ -196,13 +196,16 @@ async def _has_joymi(addr: str, timeout: float = 3.5) -> bool:
 async def resolve_addr(hint: str | None = None, fresh: bool = False) -> str | None:
     """返回要连的 MAC；扫不到就返回 None（不要瞎猜一个地址去连）。
 
-    优先级：显式地址 → 上次连成功的地址（不扫描，快）→ 已配对列表里的 IINE_*
-    → 扫描 → 已配对列表里的无名设备 → None。
+    优先级：显式地址 → 上次连成功的地址（不扫描，快）→ 扫描 → 配对表 → None。
 
-    为什么已配对列表排在扫描前面：**鼠标档（IINE_mouse）连上 Windows 后不再广播**，
-    这时扫描要白等 3.5 秒还一无所获，而已配对列表 0.2 秒就能给出 IINE_mouse。
-    Switch 档反过来 —— 它是经典蓝牙，不在 BLE 配对表里，只能靠扫描找那个带
-    ig05 标识的广播。
+    为什么扫描排在配对表前面（2026-11-07 改）：**每次切档手柄都会换 BLE 地址**，
+    配对表里躺着的还是上一个档的旧记录，先按它连就会一直卡在「链路已断开」
+    （媒体档实测重连十几分钟都没成）。能扫到广播说明设备此刻就在广播、地址新鲜，
+    这才是该优先信的。
+
+    只有扫不到时才回落配对表：**鼠标档（IINE_mouse）连上 Windows 后不再广播**，
+    那时配对表是唯一能找到它的路。Switch 档是经典蓝牙、不在 BLE 配对表里，
+    只能靠扫描找带 ig05 标识的广播。
     """
     if hint and hint.lower() not in ("auto", "", "none"):
         return hint
@@ -212,12 +215,9 @@ async def resolve_addr(hint: str | None = None, fresh: bool = False) -> str | No
             print(f"[桥] 先试上次的地址 {last}")
             return last
 
-    # 已配对列表优先：鼠标档不广播，这是唯一能自动找到它的路
+    # 先把配对表和扫描都准备好，真正决定顺序在下面：
+    # 「能扫到」> 「配对表」。设备在广播说明它没被别的主机占着、地址是新鲜的。
     pair = await _paired_addrs()
-    for name, mac in pair:
-        if name and any(h in name.lower() for h in GAMEPAD_HINTS):
-            print(f"[桥] 已配对记录里找到 {name!r}  {mac}")
-            return mac
 
     try:
         from bleak import BleakScanner
@@ -266,7 +266,14 @@ async def resolve_addr(hint: str | None = None, fresh: bool = False) -> str | No
         print(f"[桥] 扫了 3.5 秒没找到手柄（附近 {len(devs)} 个 BLE 设备，"
               f"{len(unnamed)} 个无名、{len(tagged)} 个带 ig05 标识）")
 
-        # 扫描也没结果时，再探一下配对表里的无名设备
+        # 扫不到广播时才回落到配对表：鼠标档连上 Windows 后就静默了，
+        # 这是唯一能自动找到它的路。只认名字像手柄的，别乱连别的设备。
+        for name, mac in pair:
+            if name and any(h in name.lower() for h in GAMEPAD_HINTS):
+                print(f"[桥] 没扫到广播，改用配对表里的 {name!r}  {mac}")
+                return mac
+
+        # 最后才探配对表里的无名设备
         for name, mac in pair:
             if not name and await _has_joymi(mac):
                 print(f"[桥] 已配对的无名设备 {mac} 上有 AE40，判定为手柄")

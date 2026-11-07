@@ -755,7 +755,8 @@ const CS_OPTS = [
 const csName = v => CS_NAME[v] || ("0x" + Number(v).toString(16).toUpperCase());
 
 /* ---- 鼠标：ret_mouse 的 {but, w, x, y} 实测含义 ----
-   but: 1=左键 2=右键  |  w: -1=滚轮上 +1=滚轮下
+   but: 5 位掩码 1=左 2=右 4=中 8=后退 16=前进（可相加）
+   w:   符号 = 方向（- 上 / + 下），绝对值 = 一次滚几格
    x/y: 带符号的移动量，绝对值就是 App 里那个「鼠标移动距离」滑块（实测 2 = 默认，最大 48）
    存的是方向签名 sx/sy，真正写入时再乘距离。顺序与 App 弹窗一致。 */
 const MOUSE_OPTS = [
@@ -772,28 +773,37 @@ const MOUSE_OPTS = [
   ["鼠标上移", { but: 0, w: 0, sx: 0, sy: -1 }]
 ];
 const MOUSE_DIST_MAX = 48;
+/* 滚轮：w 的绝对值 = 一次滚几格。协议是 int16、固件按 int8 存（-128..127），
+   这里限 1–20 —— 再大在 Windows 里就是「一下翻几百行」，没有实用价值。 */
+const MOUSE_WHEEL_MAX = 20;
 
-/* 由固件里的 {but,w,x,y} 反推是哪个操作 */
+/* 由固件里的 {but,w,x,y} 反推是哪个操作。
+   but 是 5 位掩码（可相加），w 的绝对值是「一次滚几格」，所以这里只取符号。 */
 function mouseSig(m){
   if (!m) return null;
-  if (m.but === 1) return { but: 1, w: 0, sx: 0, sy: 0 };
-  if (m.but === 2) return { but: 2, w: 0, sx: 0, sy: 0 };
-  if (m.w === -1)  return { but: 0, w: -1, sx: 0, sy: 0 };
-  if (m.w === 1)   return { but: 0, w: 1, sx: 0, sy: 0 };
+  if (m.but) return { but: m.but | 0, w: 0, sx: 0, sy: 0 };
+  if (m.w < 0) return { but: 0, w: -1, sx: 0, sy: 0 };
+  if (m.w > 0) return { but: 0, w: 1, sx: 0, sy: 0 };
   if (m.x > 0) return { but: 0, w: 0, sx: 1, sy: 0 };
   if (m.x < 0) return { but: 0, w: 0, sx: -1, sy: 0 };
   if (m.y > 0) return { but: 0, w: 0, sx: 0, sy: 1 };
   if (m.y < 0) return { but: 0, w: 0, sx: 0, sy: -1 };
   return null;
 }
+/* 手柄里存的实际格数（w 的绝对值），没存或为 0 时按 1 算 */
+const wheelStep = m => Math.max(1, Math.abs((m && m.w) | 0)) || 1;
 function mouseName(m){
   const s = mouseSig(m);
   if (!s) return "—";
   const hit = MOUSE_OPTS.find(([, o]) => o.but === s.but && o.w === s.w && o.sx === s.sx && o.sy === s.sy);
   if (!hit) return "—";
   const short = hit[0].replace("鼠标", "");
-  const d = Math.max(Math.abs(m.x | 0), Math.abs(m.y | 0));
-  return (s.sx || s.sy) ? `${short} ${d}` : short;
+  if (s.sx || s.sy){
+    const d = Math.max(Math.abs(m.x | 0), Math.abs(m.y | 0));
+    return `${short} ${d}`;
+  }
+  if (s.w) return `${short} ${wheelStep(m)}`;
+  return short;
 }
 /* 方向签名 → 弹窗按钮上的全名 */
 function moLabel(s){
@@ -1130,7 +1140,7 @@ function openSheet(gp){
   const s = SLOT_BY_GP.get(gp);
   if (!s){ toast("这个按键在固件里没有可配置的槽位"); return; }
   curKey = s.slot; curGp = gp;
-  pick = { mods:[], keys:[], op:null, gp:null, dist:2 };
+  pick = { mods:[], keys:[], op:null, gp:null, dist:2, wstep:1 };
   if (kind === "pad"){
     const d = draftGp.get(s.slot) || (gpList && gpList.get(s.slot));
     // 没读到就默认「映射为自己」（gp 用的是槽位号，等于 s.slot）
@@ -1146,6 +1156,7 @@ function openSheet(gp){
     if (m){
       pick.op = mouseSig(m);
       pick.dist = Math.max(Math.abs(m.x | 0), Math.abs(m.y | 0)) || 2;
+      pick.wstep = wheelStep(m);
     }
   } else if (kind === "media"){
     const v = draftCs.has(s.slot) ? draftCs.get(s.slot) : (csList && csList.get(s.slot));
@@ -1232,6 +1243,17 @@ function renderSheet(){
         `<button data-mn="${n}" class="${same(o) ? "on" : ""}">${n}</button>`).join("") +
       `</div></div>`;
     const isMove = !!(pick.op && (pick.op.sx || pick.op.sy));
+    const isWheel = !!(pick.op && pick.op.w);
+    html += `<div class="grp"><h4>滚轮步数</h4>
+      <div style="display:flex;align-items:center;gap:12px">
+        <input type="range" id="mStep" min="1" max="${MOUSE_WHEEL_MAX}" step="1" value="${pick.wstep}"
+               style="flex:1;accent-color:var(--accent)" ${isWheel ? "" : "disabled"}>
+        <b style="color:var(--accent);min-width:34px;text-align:right">${pick.wstep}</b>
+      </div>
+      <p class="note" style="margin:8px 0 0">${isWheel
+        ? `按一下滚 <b>${pick.wstep}</b> 格。手柄按 <code>w</code> 的绝对值发，1 就是系统里的一格。`
+        : "只有「滚轮上 / 滚轮下」才用得上步数。"}</p>
+    </div>`;
     html += `<div class="grp"><h4>鼠标移动距离</h4>
       <div style="display:flex;align-items:center;gap:12px">
         <input type="range" id="mDist" min="1" max="${MOUSE_DIST_MAX}" step="1" value="${pick.dist}"
@@ -1242,6 +1264,7 @@ function renderSheet(){
     </div>`;
     html += `<p class="note">写入格式（logcat 实抓）：<code>key</code>/<code>but</code> 是 uint8，` +
             `<code>w</code>/<code>x</code>/<code>y</code> 是 int16。移动距离就是 <code>x</code>/<code>y</code> 的绝对值。<br>` +
+            `<code>w</code> 的符号是方向、绝对值是<b>一次滚几格</b>（实测固件按 int8 存，超过 127 会回绕）。<br>` +
             `<code>but</code> 是位掩码：<b>1</b> 左键、<b>2</b> 右键、<b>4</b> 中键、<b>8</b> 后退、<b>16</b> 前进，` +
             `可以相加（3 = 左右键一起按）。中键/后退/前进已实测在 Windows 上分别变成中键、XBUTTON1、XBUTTON2。</p>`;
   } else if (kind === "media"){
@@ -1273,6 +1296,13 @@ function renderSheet(){
     if (hit) pick.op = { ...hit[1] };
     renderSheet();
   });
+  if ($("mStep")){
+    $("mStep").addEventListener("input", e => {
+      pick.wstep = Math.min(MOUSE_WHEEL_MAX, Math.max(1, +e.target.value || 1));
+      const nb = e.target.parentElement.querySelector("b");
+      if (nb) nb.textContent = pick.wstep;
+    });
+  }
   if ($("mDist")){
     $("mDist").addEventListener("input", e => {
       pick.dist = +e.target.value;
@@ -1364,8 +1394,10 @@ function commitSheet(){
   } else if (kind === "mouse"){
     if (!pick.op){ toast("先选一个鼠标操作"); return; }
     const d = (pick.op.sx || pick.op.sy) ? pick.dist : 0;
+    // 滚轮：w 的符号是方向，绝对值是格数
+    const w = pick.op.w ? pick.op.w * Math.max(1, pick.wstep | 0) : 0;
     draftMouse.set(curKey, {
-      but: pick.op.but, w: pick.op.w,
+      but: pick.op.but, w,
       x: pick.op.sx * d, y: pick.op.sy * d
     });
     dirtyMouse = true;

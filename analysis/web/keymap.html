@@ -900,10 +900,12 @@ const slotName = v => SLOT_NAME[v] || ("K" + v);
      横着拿      0°     上→上  下→下  左→左  右→右
      竖握·键在上 顺90°  上→右  下→左  左→上  右→下   （十字键转到了上端）
      竖握·键在下 逆90°  上→左  下→右  左→下  右→上   （十字键转到了下端）
-   手柄页改的是 gp（输出的槽位号），鼠标页改的是 x/y 的符号。 */
+   手柄页改的是 gp（输出的槽位号），鼠标页改的是 x/y 的符号，媒体页改的是 cs（Consumer usage）。 */
 const DPAD_SLOTS = [16, 17, 18, 19];
 const DIR_GP  = { up:16, down:17, left:18, right:19 };
 const DIR_VEC = { up:{x:0, y:-1}, down:{x:0, y:1}, left:{x:-1, y:0}, right:{x:1, y:0} };
+/* 媒体栏那四个方向对应的 Consumer usage */
+const DIR_CS  = { up:0x42, down:0x43, left:0x44, right:0x45 };
 const DPAD_LAYOUTS = {
   h:  { name:"横着拿",        map:{ 16:"up",    17:"down", 18:"left",  19:"right" } },
   vu: { name:"竖着拿·键在上", map:{ 16:"right", 17:"left", 18:"up",    19:"down"  } },
@@ -1001,7 +1003,7 @@ function isMapped(gp){
  * ============================================================ */
 /* 当前十字键映射是否正好等于某个预设（用来给按钮打高亮） */
 function detectDpad(){
-  if (col !== "pad" && col !== "mouse") return null;
+  if (col !== "pad" && col !== "mouse" && col !== "media") return null;
   for (const [k, lay] of Object.entries(DPAD_LAYOUTS)){
     let ok = true;
     for (const s of DPAD_SLOTS){
@@ -1011,6 +1013,9 @@ function detectDpad(){
         // gp 表为空时表示"没做过互换"，等价于每个键输出自己 → 就是横着拿
         const got = d ? (d.gp | 0) : s;
         if (got !== DIR_GP[want]){ ok = false; break; }
+      } else if (col === "media"){
+        const d = draftCs.has(s) ? draftCs.get(s) : (csList && csList.get(s));
+        if ((typeof d === "number" ? d : null) !== DIR_CS[want]){ ok = false; break; }
       } else {
         const d = draftMouse.get(s) || (mouseList && mouseList.get(s));
         const v = DIR_VEC[want];
@@ -1037,7 +1042,9 @@ function renderGpMode(){
 function renderQuick(){  const cur = detectDpad();
   $("qopts").querySelectorAll("button").forEach(b =>
     b.classList.toggle("on", b.dataset.dpad === cur));
-  const loaded = (col === "pad") ? !!gpList : !!mouseList;
+  const loaded = (col === "pad") ? !!gpList
+               : (col === "media") ? !!csList
+               : !!mouseList;
   $("qtip").textContent = !loaded
     ? "还没读到配置（连上手柄后自动读）"
     : cur
@@ -1064,6 +1071,12 @@ function applyDpad(key){
       draftMouse.set(s, { but: 0, w: 0, x: v.x * d, y: v.y * d });
     }
     dirtyMouse = true;
+  } else if (col === "media"){
+    // 媒体栏的四个方向直接换 Consumer usage，其它键不碰
+    for (const s of DPAD_SLOTS){
+      draftCs.set(s, DIR_CS[lay.map[s]]);
+    }
+    dirtyCs = true;
   } else return;
   $("btnApply").disabled = false;
   renderPad();
@@ -1081,8 +1094,8 @@ function renderPad(){
   $("btnApply").disabled = isOther
     ? !dirtySleep
     : !(dirty || dirtyGp || dirtyMouse || dirtyCs || gpEmpty());
-  // 方向键快捷键只在手柄 / 鼠标两栏出现
-  const showQuick = (kind === "pad" || kind === "mouse");
+  // 方向键快捷键只在手柄 / 鼠标 / 媒体键三栏出现
+  const showQuick = (kind === "pad" || kind === "mouse" || kind === "media");
   $("quick").hidden = !showQuick;
   renderGpMode();
   if (isOther){ renderSettings(); return; }
@@ -1306,7 +1319,8 @@ function renderSheet(){
             `0x223 主页、0x224 返回、0x42–0x45 方向…），不是 App 的私有编号。<br>` +
             `「方向 / 确认」用的是 Consumer 的 <code>Menu Up/Down/Left/Right</code>，安卓盒子、电视、Kodi 这类认，` +
             `Windows 桌面基本不响应 —— 想在 PC 上当方向键用，请走<b>键盘</b>栏的 ↑↓←→。<br>` +
-            `方向跟手柄栏的十字键一致：手柄横握时 <b>▲</b> 就是屏幕上的上，与怎么握无关。</p>`;
+            `方向跟手柄栏的十字键一致：横握时 <b>▲</b> 就是屏幕上的上。` +
+            `竖着拿当遥控器就用顶上那排「横着拿 / 竖着拿·键在上 / 键在下」一次排好，别一个键一个键改。</p>`;
   }
 
   body.innerHTML = html;

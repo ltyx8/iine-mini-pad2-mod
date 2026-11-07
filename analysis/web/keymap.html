@@ -122,6 +122,13 @@
   .io .cap{margin-top:6px;font-size:12px;color:#6b7280}
   .io .item.cur .cap{color:var(--accent)}
   .io .arrow{color:#f3a3ae;font-size:18px}
+  /* 原始键位框可点：点一下就清空这个键的映射（等于删掉改过的键） */
+  .io .item.orig .box{cursor:pointer;border-style:dashed}
+  .io .item.orig .box:hover{border-color:#ff6b7d;color:#ff6b7d}
+  .io .item.orig .cap{color:#9ca3af}
+  .io .item.orig .box::after{content:"清空";position:absolute;bottom:-19px;left:50%;transform:translateX(-50%);
+    font-size:11px;color:#9ca3af;white-space:nowrap;opacity:0;transition:opacity .12s}
+  .io .item.orig .box:hover::after{opacity:1;color:#ff6b7d}
   .io .box .clr{position:absolute;top:-8px;right:-8px;width:20px;height:20px;border-radius:50%;
                 background:#9ca3af;color:#fff;font-size:12px;line-height:20px;text-align:center;cursor:pointer}
 
@@ -754,6 +761,9 @@ const csName = v => CS_NAME[v] || ("0x" + Number(v).toString(16).toUpperCase());
 const MOUSE_OPTS = [
   ["鼠标左键", { but: 1, w: 0, sx: 0, sy: 0 }],
   ["鼠标右键", { but: 2, w: 0, sx: 0, sy: 0 }],
+  ["鼠标中键", { but: 4, w: 0, sx: 0, sy: 0 }],
+  ["后退键",   { but: 8, w: 0, sx: 0, sy: 0 }],
+  ["前进键",   { but: 16, w: 0, sx: 0, sy: 0 }],
   ["滚轮上",   { but: 0, w: -1, sx: 0, sy: 0 }],
   ["滚轮下",   { but: 0, w: 1, sx: 0, sy: 0 }],
   ["鼠标右移", { but: 0, w: 0, sx: 1, sy: 0 }],
@@ -1163,16 +1173,20 @@ function renderSheet(){
   if (kind === "pad"){
     body.innerHTML = `
       <div class="io single">
-        <div class="item">
-          <div class="box">${s ? s.hint : kname(curGp)}</div>
+        <div class="item orig">
+          <div class="box" id="origBox" title="点一下清空这个键的映射">${s ? s.hint : kname(curGp)}</div>
           <div class="cap">原始键位</div>
         </div>
       </div>
       <p class="pickhint">请选择一个按键</p>
+      <p class="note" style="text-align:center;margin:0 0 9px">
+        点「原始键位」框 ＝ 清空这个键的映射（恢复成按哪个键就输出哪个键）
+      </p>
       <div class="sheetpad" id="sheetpad">
         <img class="spbase" src="assets/gamepad_1000_2001_front.png" alt="">
       </div>`;
     renderSheetPad();
+    bindOrigBox();
     return;
   }
 
@@ -1183,8 +1197,8 @@ function renderSheet(){
 
   let html = `
     <div class="io">
-      <div class="item">
-        <div class="box">${s ? s.hint : kname(curGp)}</div>
+      <div class="item orig">
+        <div class="box" id="origBox" title="点一下清空这个键的映射">${s ? s.hint : kname(curGp)}</div>
         <div class="cap">原始键位</div>
       </div>
       <div class="arrow">→</div>
@@ -1192,7 +1206,10 @@ function renderSheet(){
         <div class="box">${cur === "—" ? "" : esc(cur)}</div>
         <div class="cap">您的键位</div>
       </div>
-    </div>`;
+    </div>
+    <p class="note" style="text-align:center;margin:-8px 0 12px">
+      点「原始键位」框 ＝ 清空这个键的映射（这个键就不再输出任何东西）
+    </p>`;
 
   if (kind === "kb"){
     html += `<div class="grp"><h4>修饰键（最多选择 2 个）</h4><div class="opts" data-g="mod">` +
@@ -1222,7 +1239,9 @@ function renderSheet(){
       <p class="note" style="margin:8px 0 0">${isMove ? "拖动调整移动步长（1–48）。" : "只有「移动」类操作才用得上距离。"}</p>
     </div>`;
     html += `<p class="note">写入格式（logcat 实抓）：<code>key</code>/<code>but</code> 是 uint8，` +
-            `<code>w</code>/<code>x</code>/<code>y</code> 是 int16。移动距离就是 <code>x</code>/<code>y</code> 的绝对值。</p>`;
+            `<code>w</code>/<code>x</code>/<code>y</code> 是 int16。移动距离就是 <code>x</code>/<code>y</code> 的绝对值。<br>` +
+            `<code>but</code> 是位掩码：<b>1</b> 左键、<b>2</b> 右键、<b>4</b> 中键、<b>8</b> 后退、<b>16</b> 前进，` +
+            `可以相加（3 = 左右键一起按）。中键/后退/前进已实测在 Windows 上分别变成中键、XBUTTON1、XBUTTON2。</p>`;
   } else if (kind === "media"){
     html += `<div class="grp"><h4>选择一个媒体键操作</h4><div class="opts" data-g="cop">` +
       CS_OPTS.map(([n, v]) =>
@@ -1233,6 +1252,7 @@ function renderSheet(){
   }
 
   body.innerHTML = html;
+  bindOrigBox();
 
   body.querySelectorAll('[data-g="mod"] button').forEach(b => b.onclick = () => {
     const v = +b.dataset.b;
@@ -1281,6 +1301,37 @@ function renderSheetPad(){
 }
 
 function esc(s){ return String(s).replace(/[&<>]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;" }[c])); }
+
+/* 「原始键位」框可点：把这一格的映射清掉（只改草稿，按「应用」才写进手柄）。
+   手柄栏清空 = 恢复成「按哪个键就输出哪个键」；其余三栏清空 = 这个键不再输出任何东西。 */
+function bindOrigBox(){
+  const b = $("origBox");
+  if (b) b.addEventListener("click", clearSlot);
+}
+function clearSlot(){
+  if (curKey == null) return;
+  const kind = COLS[col].kind;
+  const key = curKey;
+  const name = (SLOTS.find(x => x.gp === curGp) || {}).hint || "";
+  if (kind === "kb"){
+    draft.set(key, [0, 0, 0]);
+    dirty = true;
+  } else if (kind === "mouse"){
+    draftMouse.set(key, { but: 0, w: 0, x: 0, y: 0 });
+    dirtyMouse = true;
+  } else if (kind === "media"){
+    draftCs.set(key, 0);
+    dirtyCs = true;
+  } else if (kind === "pad"){
+    const base = draftGp.get(key) || (gpList && gpList.get(key)) || {};
+    draftGp.set(key, { gp: key, times: base.times });
+    dirtyGp = true;
+  } else return;
+  $("btnApply").disabled = false;
+  closeSheet();
+  renderPad();
+  toast(`已清空「${name || "该键"}」的映射，按「应用」写入手柄`);
+}
 
 function commitSheet(){
   if (curKey == null) return;

@@ -736,22 +736,44 @@ const MEDIA_OPS = ["静音", "音量+", "音量-", "播放/暂停", "上一首",
 /* ---- 媒体键：HID Consumer Page usage（固件 ret_cs 里的 cs 字段就是这个）----
    实测出厂：A/B=205(播放暂停)、X=183(停止)、Y=226(静音)、
             ↑=233(音量+)、↓=234(音量-)、←=182(上一首)、→=181(下一首)。 */
+/* HID Consumer Page（0x0C）标准 usage，数值照 HID Usage Tables 1.12 抄，
+   不是 App 的私有编号 —— 固件把 cs 原样塞进 16 位字段发给主机。
+   遥控器上常见的那批（主页/返回/搜索/菜单/电源/频道）都在这里。 */
 const CS_NAME = {
-  0x30: "电源", 0x32: "睡眠",
-  0xB0: "播放", 0xB1: "暂停", 0xB3: "快进", 0xB4: "快退",
-  0xB5: "下一首", 0xB6: "上一首", 0xB7: "停止",
+  0x30: "电源", 0x32: "睡眠", 0x40: "菜单",
+  0x6F: "亮度+", 0x70: "亮度-",
+  0x9C: "频道+", 0x9D: "频道-",
+  0xB0: "播放", 0xB1: "暂停", 0xB2: "录音", 0xB3: "快进", 0xB4: "快退",
+  0xB5: "下一首", 0xB6: "上一首", 0xB7: "停止", 0xB8: "弹出",
   0xCD: "播放/暂停",
   0xE2: "静音", 0xE9: "音量+", 0xEA: "音量-",
-  0x6F: "亮度+", 0x70: "亮度-",
-  0x19: "上一页", 0x18: "下一页", 0x22: "浏览器", 0x23: "主页", 0x24: "返回",
-  0x183: "收藏", 0x192: "计算器", 0x194: "我的电脑", 0x1A6: "邮件"
+  0x18A: "邮件", 0x192: "计算器", 0x194: "我的电脑", 0x196: "浏览器",
+  0x221: "搜索", 0x223: "主页", 0x224: "返回", 0x225: "前进",
+  0x226: "停止(网页)", 0x227: "刷新", 0x22A: "收藏"
 };
-const CS_OPTS = [
-  ["静音", 0xE2], ["音量+", 0xE9], ["音量-", 0xEA],
-  ["播放/暂停", 0xCD], ["下一首", 0xB5], ["上一首", 0xB6],
-  ["亮度+", 0x6F], ["亮度-", 0x70], ["睡眠", 0x32],
-  ["停止", 0xB7]
+/* 分组只是为了好找，写入时都落到同一个 cs 字段 */
+const CS_GROUPS = [
+  ["播放控制", [
+    ["播放/暂停", 0xCD], ["播放", 0xB0], ["暂停", 0xB1], ["停止", 0xB7],
+    ["上一首", 0xB6], ["下一首", 0xB5], ["快退", 0xB4], ["快进", 0xB3],
+    ["录音", 0xB2], ["弹出", 0xB8]
+  ]],
+  ["音量与亮度", [
+    ["音量+", 0xE9], ["音量-", 0xEA], ["静音", 0xE2],
+    ["亮度+", 0x6F], ["亮度-", 0x70],
+    ["频道+", 0x9C], ["频道-", 0x9D]
+  ]],
+  ["系统", [
+    ["电源", 0x30], ["睡眠", 0x32], ["菜单", 0x40],
+    ["计算器", 0x192], ["我的电脑", 0x194], ["邮件", 0x18A]
+  ]],
+  ["浏览器 / 遥控器", [
+    ["主页", 0x223], ["返回", 0x224], ["前进", 0x225],
+    ["刷新", 0x227], ["搜索", 0x221], ["收藏", 0x22A],
+    ["停止(网页)", 0x226], ["浏览器", 0x196]
+  ]]
 ];
+const CS_OPTS = CS_GROUPS.flatMap(([, arr]) => arr);
 const csName = v => CS_NAME[v] || ("0x" + Number(v).toString(16).toUpperCase());
 
 /* ---- 鼠标：ret_mouse 的 {but, w, x, y} 实测含义 ----
@@ -1268,12 +1290,16 @@ function renderSheet(){
             `<code>but</code> 是位掩码：<b>1</b> 左键、<b>2</b> 右键、<b>4</b> 中键、<b>8</b> 后退、<b>16</b> 前进，` +
             `可以相加（3 = 左右键一起按）。中键/后退/前进已实测在 Windows 上分别变成中键、XBUTTON1、XBUTTON2。</p>`;
   } else if (kind === "media"){
-    html += `<div class="grp"><h4>选择一个媒体键操作</h4><div class="opts" data-g="cop">` +
-      CS_OPTS.map(([n, v]) =>
-        `<button data-cs="${v}" class="${pick.op === v ? "on" : ""}">${n}</button>`).join("") +
-      `</div></div>`;
+    for (const [title, arr] of CS_GROUPS){
+      html += `<div class="grp"><h4>${title}</h4><div class="opts" data-g="cop">` +
+        arr.map(([n, v]) =>
+          `<button data-cs="${v}" class="${pick.op === v ? "on" : ""}">${n}</button>`).join("") +
+        `</div></div>`;
+    }
     html += `<p class="note">写入格式（logcat 实抓）：<code>key</code>/<code>cs</code> 都是 <b>uint16</b>；` +
-            `<code>cs</code> 是 HID Consumer Page 的 usage（静音 0xE2、音量+ 0xE9、播放暂停 0xCD…）。</p>`;
+            `<code>cs</code> 是 <b>HID Consumer Page 的标准 usage</b>（0xE2 静音、0xE9 音量+、0xCD 播放暂停、` +
+            `0x223 主页、0x224 返回…），不是 App 的私有编号。<br>` +
+            `对照表见 HID Usage Tables 的 Consumer Page（0x0C）一节，想用列表之外的键直接手填数值也行。</p>`;
   }
 
   body.innerHTML = html;

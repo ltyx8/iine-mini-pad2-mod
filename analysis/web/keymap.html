@@ -828,8 +828,10 @@ const FACTORY = {
 /* 槽位 → 物理按键。依据两条：
    ① A 键 = 槽位 0 已实测确认（App 改 A→Z 后读回 slot0 由 04 变 1d）；
    ② 其余按 App「键盘」栏的红标签逐条对齐（ZL=LAlt、-=Backspace、+=Space、ZR=Enter、M1=Delete）。
-   ③ 复古迷你手柄2 没有摇杆，L3/R3 不存在；槽位 12 / 15 落在手柄底部那两个圆键上，
-      即「截图(CAPTURE)」和「HOME」——App 键盘栏不画这两个的标签，但「手柄」栏里能改。
+   ③ 复古迷你手柄2 没有摇杆，L3/R3 不存在；槽位 12 / 15 落在手柄底部那两个圆键上。
+      哪槽是哪个键**只能实测**：2026-11-07 用鼠标表做对照（槽位12→后退、槽位15→前进），
+      按实物「HOME」触发后退、按「截图」触发前进 → slot12 = 右圆键(HOME)、slot15 = 左圆键(截图)。
+      App 键盘栏不画这两个的标签，但「手柄」栏里能改。
    注意：gp 是手柄按键编号（GamepadKey.rawValue），用来查底图坐标；slot 是固件 set_kb 的 key。 */
 const SLOTS = [
   { slot: 0, gp:  1, hint:"A" },
@@ -842,8 +844,8 @@ const SLOTS = [
   { slot: 9, gp:  8, hint:"ZR" },      // 出厂 Enter
   { slot:10, gp: 93, hint:"-" },       // 出厂 Backspace
   { slot:11, gp: 94, hint:"+" },       // 出厂 Space
-  { slot:12, gp: 95, hint:"截图" },    // 出厂 LShift（无摇杆机型，槽位落在底边左圆键）
-  { slot:15, gp: 17, hint:"HOME" },    // 出厂 LCtrl（底边右圆键）
+  { slot:12, gp: 17, hint:"HOME" },    // 出厂 LShift；实物在底边【右】圆键
+  { slot:15, gp: 95, hint:"截图" },    // 出厂 LCtrl；实物在底边【左】圆键
   { slot:16, gp: 14, hint:"▲" },
   { slot:17, gp: 13, hint:"▼" },
   { slot:18, gp: 16, hint:"◀" },

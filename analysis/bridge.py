@@ -26,6 +26,7 @@ Windows 上已经被系统连着的手柄不再广播，Web Bluetooth 的 `reque
 import argparse
 import asyncio
 import collections
+import concurrent.futures
 import json
 import os
 import socket
@@ -193,27 +194,27 @@ async def _has_joymi(addr: str, timeout: float = 3.5) -> bool:
         return False
 
 
-async def resolve_addr(hint: str | None = None, fresh: bool = False) -> str | None:
-    """返回要连的 MAC；扫不到就返回 None（不要瞎猜一个地址去连）。
+async def resolve_addr(hint: str | None = None, fresh: bool = False) -> tuple[str, bool] | tuple[None, bool]:
+    """返回 (要连的 MAC, 这个地址是不是刚从扫描拿到的)；扫不到返回 (None, False)。
 
-    优先级：显式地址 → 上次连成功的地址（不扫描，快）→ 扫描 → 配对表 → None。
+    优先级：显式地址 → **扫描** → 上次连成功的地址 → 配对表 → None。
 
-    为什么扫描排在配对表前面（2026-11-07 改）：**每次切档手柄都会换 BLE 地址**，
-    配对表里躺着的还是上一个档的旧记录，先按它连就会一直卡在「链路已断开」
-    （媒体档实测重连十几分钟都没成）。能扫到广播说明设备此刻就在广播、地址新鲜，
-    这才是该优先信的。
+    为什么扫描第一（2026-11-07 两次踩坑后的结论）：**每次切档手柄都会换 BLE 地址**，
+    缓存文件和配对表里躺着的都是上一个档的旧记录。先按旧地址连，不仅必然失败，
+    还会把它交给 WinRT 去解析 —— 这个调用会占住事件循环几十秒，导致后面的扫描
+    排不上队，整轮连接直接作废（实测死地址能让启动连接卡到 76 秒还没动静）。
+    能扫到广播说明设备此刻就在广播、地址新鲜，这才是唯一该优先信的信号。
 
-    只有扫不到时才回落配对表：**鼠标档（IINE_mouse）连上 Windows 后不再广播**，
-    那时配对表是唯一能找到它的路。Switch 档是经典蓝牙、不在 BLE 配对表里，
-    只能靠扫描找带 ig05 标识的广播。
+    扫描之后的回落顺序：上次成功的地址（鼠标档连上 Windows 后不广播，这是主要场景）
+    → 配对表里名字像手柄的 → 配对表里带 AE40 的无名设备。
+    Switch 档是经典蓝牙、不在 BLE 配对表里，只能靠扫描找带 ig05 标识的广播。
     """
     if hint and hint.lower() not in ("auto", "", "none"):
-        return hint
-    if not fresh:
-        last = _load_last_addr()
-        if last:
-            print(f"[桥] 先试上次的地址 {last}")
-            return last
+        return hint, False
+    # 缓存地址不再作为第一选择。每次切档手柄都会换 BLE 地址，缓存里那个很可能
+    # 已经死了，拿它去连要白等十几秒（而且它还会占着 WinRT，把后面的扫描堵住）。
+    # 只在「扫描确实找不到广播」时才回退到它 —— 见下面 fallback。
+    last = None if fresh else _load_last_addr()
 
     # 先把配对表和扫描都准备好，真正决定顺序在下面：
     # 「能扫到」> 「配对表」。设备在广播说明它没被别的主机占着、地址是新鲜的。
@@ -221,10 +222,20 @@ async def resolve_addr(hint: str | None = None, fresh: bool = False) -> str | No
 
     try:
         from bleak import BleakScanner
-        raw = await BleakScanner.discover(timeout=3.5, return_adv=True)
-        items = list(raw.values()) if isinstance(raw, dict) else [(d, None) for d in raw]
-        adv_of = {d.address: a for d, a in items}
-        devs = [d for d, _ in items]
+
+        async def _scan_once():
+            raw = await BleakScanner.discover(timeout=3.5, return_adv=True)
+            items = list(raw.values()) if isinstance(raw, dict) else [(d, None) for d in raw]
+            return [d for d, _ in items], {d.address: a for d, a in items}
+
+        devs, adv_of = await _scan_once()
+        if not devs:
+            # 进程刚起来时蓝牙栈还没热，第一次扫描经常一台都扫不到
+            # （实测启动瞬间「附近 0 个 BLE 设备」），这时要是直接回退到缓存地址，
+            # 就等于拿一个过期的地址白撞一轮。等一秒再扫一次。
+            print("[桥] 第一次扫描一台都没扫到（蓝牙栈还在初始化），1 秒后重试")
+            await asyncio.sleep(1.0)
+            devs, adv_of = await _scan_once()
 
         def _rssi_of(d):
             a = adv_of.get(d.address)
@@ -254,35 +265,41 @@ async def resolve_addr(hint: str | None = None, fresh: bool = False) -> str | No
         if tagged:
             d = tagged[0]
             print(f"[桥] 厂商数据含 ig05：{d.name!r}  {d.address}  rssi={_rssi_of(d)}")
-            return d.address
+            return d.address, True
         if named:
             d = named[0]
             print(f"[桥] 按名字扫描到 {d.name!r}  {d.address}  rssi={_rssi_of(d)}")
-            return d.address
+            return d.address, True
         for d in unnamed[:2]:
             if await _has_joymi(d.address):
                 print(f"[桥] 无名设备 {d.address} 上有 AE40，判定为手柄")
-                return d.address
+                return d.address, True
         print(f"[桥] 扫了 3.5 秒没找到手柄（附近 {len(devs)} 个 BLE 设备，"
               f"{len(unnamed)} 个无名、{len(tagged)} 个带 ig05 标识）")
 
-        # 扫不到广播时才回落到配对表：鼠标档连上 Windows 后就静默了，
-        # 这是唯一能自动找到它的路。只认名字像手柄的，别乱连别的设备。
+        # 扫不到广播时，先回退到「上次连成功的地址」：鼠标档连上 Windows 后
+        # 就不再广播了，这是最常见的场景。放在扫描之后，就不会再出现
+        # 「抱着一个已经作废的地址空转」
+        if last:
+            print(f"[桥] 没扫到广播，改用上次的地址 {last}")
+            return last, False
+
+        # 再看配对表：只认名字像手柄的，别乱连别的设备。
         for name, mac in pair:
             if name and any(h in name.lower() for h in GAMEPAD_HINTS):
                 print(f"[桥] 没扫到广播，改用配对表里的 {name!r}  {mac}")
-                return mac
+                return mac, False
 
         # 最后才探配对表里的无名设备
         for name, mac in pair:
             if not name and await _has_joymi(mac):
                 print(f"[桥] 已配对的无名设备 {mac} 上有 AE40，判定为手柄")
-                return mac
+                return mac, False
         print("[桥] 找不到可连的手柄。注意：Switch 模式 / 经典蓝牙的「Pro Controller」"
               "不在 BLE 里，读不到改键配置，要把手柄拨到鼠标档或切回私有（配置）模式。")
     except Exception as e:
         print(f"[桥] 扫描失败：{type(e).__name__}: {e}")
-    return None
+    return None, False
 
 
 
@@ -467,6 +484,21 @@ class Device:
                             f"要切回私有（配置）模式才能改键")
                     raise RuntimeError(
                         f"没找到 AE41/AE42（本次拿到 {len(svcs)} 个服务，cache={mode}）")
+
+                # 关键校验：服务表可能是系统缓存里翻出来的，链路根本没建立。
+                # 死地址（切档前的旧 MAC）就会这样「看起来连上了」——实测能拿回
+                # AE41/AE42 并读到电量，但 MTU 只有 23、随后立刻掉线，
+                # 白占十几秒还让人以为连上了。这里必须确认真链路。
+                if int(getattr(dev, "connection_status", 0) or 0) != 1:
+                    for _ in range(25):                     # 最多给 2.5 秒
+                        await asyncio.sleep(0.1)
+                        if int(getattr(dev, "connection_status", 0) or 0) == 1:
+                            break
+                    else:
+                        raise RuntimeError(
+                            f"拿到服务表但链路没建立（connection_status="
+                            f"{int(getattr(dev, 'connection_status', 0) or 0)}）："
+                            f"{self.addr} 多半是切档前的旧地址，服务来自系统缓存")
 
                 self.dev, self.rx, self.tx, self.bat = dev, rx, tx, bat
                 _props = int(getattr(rx, "characteristic_properties", 0) or 0)
@@ -741,9 +773,22 @@ RECOVER_SECONDS = 120.0       # 掉线后自动抢连的时长
 
 
 def run_ble(coro, timeout=20.0):
-    """从 HTTP 线程把协程投到主线程 loop 上执行。"""
-    fut = asyncio.run_coroutine_threadsafe(coro, LOOP)
-    return fut.result(timeout)
+    """从 HTTP 线程把协程投到主线程 loop 上执行。
+
+    超时必须真的把协程取消掉。以前只写 fut.result(timeout)，超时只是这边不等了，
+    协程还在 loop 里连、还攥着 BluetoothLEDevice，于是下一轮扫描/连接就撞车：
+    明明换档换了地址，新地址死活连不上，等几分钟才偶然成功一次。
+    """
+    async def _guard():
+        return await asyncio.wait_for(coro, timeout)
+
+    fut = asyncio.run_coroutine_threadsafe(_guard(), LOOP)
+    try:
+        # 多给 6 秒余量，让 wait_for 自己先抛 TimeoutError（那条路能干净收尾）
+        return fut.result(timeout + 6)
+    except concurrent.futures.TimeoutError:
+        fut.cancel()
+        raise TimeoutError(f"BLE 操作超时（{timeout:.0f} 秒）")
 
 
 # ---------------------------------------------------------------- HTTP
@@ -910,7 +955,17 @@ def _connect_once(quick: bool = False):
     tried = set()
     plan = ((False, 1), (True, 1 if quick else 2))
     for fresh, tries in plan:
-        addr = run_ble(resolve_addr(None if fresh else CONFIG.addr, fresh=fresh), 16)
+        # 解析地址本身也可能超时（上一轮连接把 loop 占着，扫描排不上队）。
+        # 以前这里没有保护，一次超时就把整轮 _connect_once 打断，
+        # 启动时直接放弃、也不再重试 —— 表现就是「一直在连旧地址」。
+        from_scan = False
+        try:
+            addr, from_scan = run_ble(
+                resolve_addr(None if fresh else CONFIG.addr, fresh=fresh), 16)
+        except Exception as e:
+            print(f"[桥] 解析地址失败：{type(e).__name__}: {e}")
+            last = e
+            addr = None
         if not addr:
             last = RuntimeError("没找到手柄广播（可能已关机或休眠，或被手机 / Switch 占着）")
             if fresh:
@@ -923,19 +978,27 @@ def _connect_once(quick: bool = False):
             print(f"[桥] 又是 {addr}，但它现在是广播状态，再试一次")
         tried.add(addr)
         DEVICE.addr = addr
+        # 扫描到的地址必须先 UNCACHED 重新发现服务：系统里存的是上一次（连不上时）
+        # 的空服务表，走 CACHED 会一直读到 0 个服务。缓存 / 配对表来的地址则可以先
+        # 走 CACHED（快），失败后 connect() 自己会再用 UNCACHED 重试一次。
+        uncached = fresh or from_scan
+        # 只有「纯缓存地址」（没扫描验证过）才给短预算：它能连上 1~3 秒就成，
+        # 超过 12 秒基本不会成，继续等只会白占时间。
+        budget = 45 if uncached else 12
         try:
-            # 扫描刚抓到的地址 = 新状态，必须 UNCACHED 重新发现服务
-            name = run_ble(DEVICE.connect(attempts=tries, force_uncached=fresh), 45)
+            name = run_ble(DEVICE.connect(attempts=tries, force_uncached=uncached), budget)
             _save_last_addr(addr)
             print(f"[桥] 已连接 {name} ({addr})")
             return status()
         except Exception as e:
             last = e
             DEVICE.connected = False
-            # 缓存地址证明没有服务表 → 立刻作废，别让它下次启动再拖两轮
-            if not fresh and "0 个服务" in str(e):
+            # 缓存地址任何形式的失败都作废 —— 切档换地址是最常见的原因，
+            # 留着它下轮又会先撞 12 秒。清掉后下一轮直接扫描；
+            # 真扫不到（鼠标档连上 Windows 后不广播）还有配对表兜底。
+            if not uncached:
                 _clear_last_addr()
-                print(f"[桥] 缓存地址 {addr} 已作废（没有 GATT 服务表）")
+                print(f"[桥] 缓存地址 {addr} 作废（{type(e).__name__}），下一轮改扫描")
             print(f"[桥] 连接 {addr} 失败：{type(e).__name__}: {e}")
     return {"ok": False, "connected": False,
             "error": (f"{type(last).__name__}: {last}" if last else "连接失败")}
@@ -970,43 +1033,26 @@ def _start_recover(seconds: float = RECOVER_SECONDS):
 # ---------------------------------------------------------------- main
 
 async def _auto_connect():
-    """启动时的自动连接，跑在 loop 里（不挡 HTTP 服务，网页能秒开）。"""
+    """启动时的自动连接，跑在 loop 里（不挡 HTTP 服务，网页能秒开）。
+
+    直接复用 _connect_once —— 之前这里抄了一份同样的逻辑，两边的超时和
+    失败处理不一致，改了一处另一处还是老毛病。
+    """
     global CONNECTING
     CONNECTING = True
     try:
-        tried = set()
-        for fresh, tries in ((False, 1), (True, 2)):
-            try:
-                addr = await asyncio.wait_for(
-                    resolve_addr(None if fresh else CONFIG.addr, fresh=fresh), 16)
-            except Exception:
-                addr = None
-            if not addr:
-                if fresh:
-                    break
-                print("[桥] 缓存地址没用，重新扫描")
-                continue
-            if addr in tried:
-                print(f"[桥] 又是 {addr}，但它现在是广播状态，再试一次")
-            tried.add(addr)
-            DEVICE.addr = addr
-            print(f"[桥] 正在连 {addr} …")
-            try:
-                name = await asyncio.wait_for(
-                    DEVICE.connect(attempts=tries, force_uncached=fresh), 45)
-                _save_last_addr(addr)
-                print(f"[桥] 已连接 {name} ({addr})")
-                return
-            except Exception as e:
-                DEVICE.connected = False
-                if not fresh and "0 个服务" in str(e):
-                    _clear_last_addr()
-                    print(f"[桥] 缓存地址 {addr} 已作废（没有 GATT 服务表）")
-                print(f"[桥] 连接 {addr} 失败：{type(e).__name__}: {e}")
+        r = await asyncio.to_thread(_connect_once)
+        if not r.get("connected"):
+            print(f"[桥] 启动时没连上：{r.get('error')}")
+    except Exception as e:
+        print(f"[桥] 自动连接异常：{type(e).__name__}: {e}")
     finally:
         CONNECTING = False
         if not DEVICE.connected:
-            print("[桥] 服务照常提供，网页上点「连接手柄」可以重试")
+            print("[桥] 启动时没连上，转后台重连")
+            # 别停在这儿等用户点「连接」：手柄开机慢、切档后链路要放开，
+            # 这些都得反复试几十秒。交给后台重连循环，网页轮询到 connected 就能用。
+            _start_recover()
 
 
 def main():

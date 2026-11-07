@@ -779,6 +779,28 @@ const CS_GROUPS = [
   ]]
 ];
 const CS_OPTS = CS_GROUPS.flatMap(([, arr]) => arr);
+
+/* 握法补偿：手柄相对屏幕顺时针转了多少度。
+   横握时「十字上」朝屏幕上方，直接发「上」；把手机竖起来当遥控器（顺时针 90°）后，
+   同一个键在屏幕上看是指向左边，这时必须发「左」，否则上下左右整体偏 90°。
+   DIR_RING 按顺时针排：上 右 下 左。 */
+const DIR_RING = [0x42, 0x45, 0x43, 0x44];
+const DIR_SET = new Set(DIR_RING);
+const CS_ROT = [[0, "横握"], [90, "竖握 ⟳"], [180, "倒置"], [270, "竖握 ⟲"]];
+let csRot = 0;
+try { csRot = +(localStorage.getItem("csRot") || 0) || 0; } catch {}
+function rotDir(v){
+  if (!csRot || !DIR_SET.has(v)) return v;
+  const steps = (csRot / 90) % 4;
+  const i = DIR_RING.indexOf(v);
+  return DIR_RING[(i - steps + 4) % 4];
+}
+function invRotDir(v){
+  if (!csRot || !DIR_SET.has(v)) return v;
+  const steps = (csRot / 90) % 4;
+  const i = DIR_RING.indexOf(v);
+  return DIR_RING[(i + steps) % 4];
+}
 const csName = v => CS_NAME[v] || ("0x" + Number(v).toString(16).toUpperCase());
 
 /* ---- 鼠标：ret_mouse 的 {but, w, x, y} 实测含义 ----
@@ -1187,7 +1209,9 @@ function openSheet(gp){
     }
   } else if (kind === "media"){
     const v = draftCs.has(s.slot) ? draftCs.get(s.slot) : (csList && csList.get(s.slot));
-    pick.op = (typeof v === "number") ? v : null;
+    // 手柄里存的是标准 usage；显示时要按当前握法还原成「用户视角的方向」，
+    // 否则竖握下读回来是 0x44(左)，面板上却高亮成「◀ 左」，看着像设错了。
+    pick.op = (typeof v === "number") ? invRotDir(v) : null;
   }
   $("sheetTitle").textContent = COLS[col].sheet;
   // 手柄栏是「点图上的键即生效」，跟 App 一样没有确认按钮
@@ -1300,6 +1324,14 @@ function renderSheet(){
         arr.map(([n, v]) =>
           `<button data-cs="${v}" class="${pick.op === v ? "on" : ""}">${n}</button>`).join("") +
         `</div></div>`;
+      if (title === "方向 / 确认"){
+        html += `<div class="grp"><h4>握法（只影响四个方向）</h4><div class="opts" data-g="rot">` +
+          CS_ROT.map(([v, n]) =>
+            `<button data-rot="${v}" class="${csRot === v ? "on" : ""}">${n}</button>`).join("") +
+          `</div><p class="note" style="margin:8px 0 0">` +
+          `横握：<b>▲</b> 发「上」。手柄顺时针竖起来后，同一个键朝屏幕左边，选「竖握 ⟳」它会自动改发「左」。` +
+          `改完点「确定」时按当前握法折算，回读到的值仍是标准 usage。</p></div>`;
+      }
     }
     html += `<p class="note">写入格式（logcat 实抓）：<code>key</code>/<code>cs</code> 都是 <b>uint16</b>；` +
             `<code>cs</code> 是 <b>HID Consumer Page 的标准 usage</b>（0xE2 静音、0xE9 音量+、0xCD 播放暂停、` +
@@ -1345,6 +1377,12 @@ function renderSheet(){
   }
   body.querySelectorAll('[data-g="cop"] button').forEach(b => b.onclick = () => {
     pick.op = +b.dataset.cs; renderSheet();
+  });
+  body.querySelectorAll('[data-g="rot"] button').forEach(b => b.onclick = () => {
+    csRot = +b.dataset.rot;
+    try { localStorage.setItem("csRot", csRot); } catch {}
+    renderSheet();
+    toast(csRot ? ("握法：" + (CS_ROT.find(x => x[0] === csRot) || [, "横握"])[1] + "（方向按此折算）") : "握法：横握");
   });
 }
 
@@ -1436,7 +1474,7 @@ function commitSheet(){
     dirtyMouse = true;
   } else if (kind === "media"){
     if (typeof pick.op !== "number"){ toast("先选一个媒体键"); return; }
-    draftCs.set(curKey, pick.op);
+    draftCs.set(curKey, rotDir(pick.op));   // 四个方向按当前握法折算，其余原样
     dirtyCs = true;
   }
   $("btnApply").disabled = !(dirty || dirtyGp || dirtyMouse || dirtyCs || dirtySleep);
